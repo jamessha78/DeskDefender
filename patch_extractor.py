@@ -114,4 +114,4 @@ class PatchExtractor(object):
     # patches /= np.std(patches, acis=1).reshape( (patches.shape[0], 1) )
 
   def extract_all_file(self, fname, normalize=False):
-    return self.extract_all(np.array(Image.open(fname)), normalize)
+    return self.extract_all(np.array(Image.open(fname).convert('L')), normalize)
