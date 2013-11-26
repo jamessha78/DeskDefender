@@ -28,13 +28,15 @@ def get_hog(patch_angles, patch_mags, bins=10):
             high_weight = 1 - low_weight
             hog[0, bin_low] += mag*low_weight
             hog[0, bin_high] += mag*high_weight
-    hog = hog/np.sum(hog)
+    hog = hog/max(np.sum(hog), 1e-5)
     return hog
 
-image = Image.open('images/newtest/ew-friends.gif').convert('L')
-image = np.array(image)
-angles, mags = get_mags_angles(image)
-hog = get_hog(angles, mags)
-print hog
+#image = Image.open('images/newtest/ew-friends.gif').convert('L')
+#image = np.array(image)
+#print image[:200, :200]
+#angles, mags = get_mags_angles(image)
+#hog = get_hog(angles, mags)
+#print hog
 
 #Image.fromarray(mags).show()
+#Image.fromarray(image).show()

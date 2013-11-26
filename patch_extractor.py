@@ -57,10 +57,10 @@ class PatchExtractor(object):
           i += 1
 
     f1 = plt.imshow(data,interpolation='nearest')
-    setp(f1.axes.get_xticklabels(), visible=False)
-    setp(f1.axes.get_yticklabels(), visible=False)
-    setp(f1.axes.xaxis.get_ticklines(), visible=False)
-    setp(f1.axes.yaxis.get_ticklines(), visible=False)
+    #setp(f1.axes.get_xticklabels(), visible=False)
+    #setp(f1.axes.get_yticklabels(), visible=False)
+    #setp(f1.axes.xaxis.get_ticklines(), visible=False)
+    #setp(f1.axes.yaxis.get_ticklines(), visible=False)
     if self.num_channels == 1:
       f1.set_cmap('Greys_r')
     plt.show()
