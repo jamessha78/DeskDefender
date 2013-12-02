@@ -112,7 +112,6 @@ def get_bounding_boxes(ground_truth_file_name):
 def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, target_height, target_width):
     # For each bounding box, crop image and save to corresponding location in output dir
     for file_name, boxes in bounding_boxes.iteritems():
-        i = 0
         output_dir = os.path.join(dst_folder, os.path.dirname(file_name))
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
@@ -163,6 +162,36 @@ def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, t
             final.save(full_output_name)
 
 
+def extract_negative_patches(src_dir, dst_dir, bounding_boxes, patch_height, patch_width):
+    current_patch = 0
+    patch_file_template = os.path.join(dst_dir, "negative_%s.bmp")
+    if not os.path.exists(dst_dir):
+        os.makedirs(dst_dir)
+    for file_name, boxes in bounding_boxes.iteritems():
+        full_input_name = os.path.join(src_dir, file_name)
+        orig_image = Image.open(full_input_name)
+        width, height = orig_image.size
+        num_patches_wide = width / patch_width
+        num_patches_tall = height / patch_height
+        for x in range(num_patches_wide):
+            for y in range(num_patches_tall):
+                patch_left = x*patch_width
+                patch_right = patch_left + patch_width
+                patch_top = y*patch_height
+                patch_bottom = patch_top + patch_height
+                can_use_patch = True
+                for left, top, right, bottom in boxes:
+                    if not ((patch_right <= left or patch_left >= right) and
+                                (patch_top >= bottom or patch_bottom <= top)):
+                        # Overlaps with a face's bounding box
+                        can_use_patch = False
+                if not can_use_patch:
+                    continue
+                full_output_file_name = patch_file_template % current_patch
+                orig_image.crop((patch_left, patch_top, patch_right, patch_bottom)).save(full_output_file_name)
+                current_patch += 1
+
+
 def show_histogram(values, num_buckets=50):
     avg = sum(values) / len(values)
     values = sorted(values)
@@ -208,18 +237,22 @@ def show_size_stats(bounding_boxes, target_aspect_ratio):
             width = min(width, other_width)
             # We can ignore width when measuring scale
             scales.append(height)
-    #show_histogram(scales)
+    show_histogram(scales)
     print sorted(scales)
     show_histogram([s for s in scales if s < 160])
 
 
 def main():
     src_folder = "uncropped_images"
-    dst_folder = "cropped_images"
+    faces_dst_folder = "cropped_images"
+    negatives_dst_folder = "negative_examples"
     bounding_boxes = get_bounding_boxes("ground_truth.txt")
     #show_aspect_ratio_stats(bounding_boxes)
     #show_size_stats(bounding_boxes, 1.25)
-    extract_faces(src_folder, dst_folder, bounding_boxes, 1.25, 40, 32)
+    cropped_height = 40
+    cropped_width = 32
+    #extract_faces(src_folder, faces_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
+    extract_negative_patches(src_folder, negatives_dst_folder, bounding_boxes, cropped_height, cropped_width)
 
 
 if __name__ == "__main__":
