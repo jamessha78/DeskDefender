@@ -1,28 +1,41 @@
 import pickle
+import glob
 import numpy as np
 
 from sklearn import svm
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.tree import DecisionTreeClassifier
 from PIL import Image
 
 from patch_extractor import *
 from utils import *
 
 class Trainer(object):
-    def __init__(self, directory):
-        self.load_data(directory)
-        self.clf = svm.SVC()
+    def __init__(self, type='svm'):
+        if type == 'svm':
+            self.clf = svm.SVC(kernel='rbf', probability=True)
+        elif type == 'adaboost':
+            self.clf = AdaBoostClassifier(DecisionTreeClassifier(max_depth=1),
+                                      algorithm="SAMME",
+                                      n_estimators=200)
+        else:
+            print 'Unknown type', type
+        self.type = type
 
-    def load_data(self, directory):
-        test_image_1 = Image.open('images/newtest/ew-friends.gif').convert('L')
-        test_image_1 = np.array(test_image_1)[:250, :250]
-        test_image_2 = Image.open('images/newtest/ew-courtney-david.gif').convert('L')
-        test_image_2 = np.array(test_image_2)[:250, :250]
-        positive_images = [test_image_1]
-        negative_images = [test_image_2]
+    def load_data(self, pos_directory, neg_directory):
+        print 'LOADING DATA...'
+        positive_files = glob.glob(pos_dir + '*.bmp')
+        negative_files = glob.glob(neg_dir + '*.bmp')
+        #positive_files = positive_files[-1:]
+        #negative_files = negative_files[-1:]
+        #print positive_files
+        #print negative_files
+        positive_images = [Image.open(x).convert('L') for x in positive_files]
+        negative_images = [Image.open(x).convert('L') for x in negative_files]
         # Turn images from whatever directory structure into a list of images here
         num_bins = 10
         patch_size = 5
-        patch_extractor = PatchExtractor(patch_size, 1)
+        patch_extractor = PatchExtractor(patch_size, 1, stride=patch_size/2)
         self.training_features = []
         self.training_labels = []
         # positive examples
@@ -37,7 +50,7 @@ class Trainer(object):
                 hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
                 feature_vec[i, :] = hog_features
             self.training_features.append(feature_vec.flatten().tolist())
-            self.training_labels.append(1)
+            self.training_labels.append('True')
         # negative examples
         for image in negative_images:
             angles, mags = get_mags_angles(image)
@@ -50,19 +63,25 @@ class Trainer(object):
                 hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
                 feature_vec[i, :] = hog_features
             self.training_features.append(feature_vec.flatten().tolist())
-            self.training_labels.append(0)
+            self.training_labels.append('False')
        
         self.training_features = np.array(self.training_features)
         self.training_labels = np.array(self.training_labels)
 
     def save_classifier(self):
-        f = open('classifier.pickle', 'w+')
+        print 'SAVING...'
+        f = open('classifier_{0}.pickle'.format(self.type), 'w+')
         pickle.dump(self.clf, f)
         f.close()
 
     def train(self):
+        print 'TRAINING...'
         self.clf.fit(self.training_features, self.training_labels)
 
-test = Trainer('')
+
+pos_dir = 'cropped_images/test/'
+neg_dir = 'negative_examples/'
+test = Trainer('svm')
+test.load_data(pos_dir, neg_dir)
 test.train()
 test.save_classifier()
