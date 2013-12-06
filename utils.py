@@ -31,6 +31,29 @@ def get_hog(patch_angles, patch_mags, bins=10):
     hog = hog/max(np.sum(hog), 1e-5)
     return hog
 
+def extract_hog_features(patch_extractor, patch, num_bins=10):
+    angles, mags = get_mags_angles(patch)
+    angle_patches = patch_extractor.extract_all(angles)
+    mag_patches = patch_extractor.extract_all(mags)
+    feature_vec = np.zeros((angle_patches.shape[0], num_bins))
+    for i in range(angle_patches.shape[0]):
+        angle_patch = angle_patches[i, :].reshape(patch_extractor.rf_size[0], patch_extractor.rf_size[1])
+        mag_patch = mag_patches[i, :].reshape(patch_size, patch_size)
+        hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
+        feature_vec[i, :] = hog_features
+
+def get_integral_image(image):
+    s = np.zeros(image.shape)
+    ii = np.zeros(image.shape)
+    s[0, :] = image[0, :]
+    for i in range(1, image.shape[0]):
+        s[i, :] = s[i-1, :] + image[i, :]
+    ii[:, 0] = s[:, 0]
+    for j in range(1, image.shape[1]):
+        ii[:, j] = ii[:, j-1] + s[:, j]
+    return ii
+
+
 #image = Image.open('images/newtest/ew-friends.gif').convert('L')
 #image = np.array(image)
 #print image[:200, :200]

@@ -13,10 +13,11 @@ from utils import *
 class Trainer(object):
     def __init__(self, type='svm'):
         if type == 'svm':
-            self.clf = svm.SVC(kernel='rbf', probability=True)
+            w = {'True': 50, 'False': 1}
+            self.clf = svm.SVC(kernel='rbf', probability=True, class_weight=w)
         elif type == 'adaboost':
-            self.clf = AdaBoostClassifier(DecisionTreeClassifier(max_depth=1),
-                                      algorithm="SAMME",
+            self.clf = AdaBoostClassifier(DecisionTreeClassifier(max_depth=3),
+                                      algorithm="SAMME.R",
                                       n_estimators=200)
         else:
             print 'Unknown type', type
@@ -26,8 +27,8 @@ class Trainer(object):
         print 'LOADING DATA...'
         positive_files = glob.glob(pos_dir + '*.bmp')
         negative_files = glob.glob(neg_dir + '*.bmp')
-        #positive_files = positive_files[-1:]
-        #negative_files = negative_files[-1:]
+        #positive_files = positive_files[-10:]
+        #negative_files = negative_files[-10:]
         #print positive_files
         #print negative_files
         positive_images = [Image.open(x).convert('L') for x in positive_files]
@@ -35,7 +36,8 @@ class Trainer(object):
         # Turn images from whatever directory structure into a list of images here
         num_bins = 10
         patch_size = 5
-        patch_extractor = PatchExtractor(patch_size, 1, stride=patch_size/2)
+        stride = patch_size/2
+        patch_extractor = PatchExtractor(patch_size, 1, stride=stride)
         self.training_features = []
         self.training_labels = []
         # positive examples
@@ -77,11 +79,13 @@ class Trainer(object):
     def train(self):
         print 'TRAINING...'
         self.clf.fit(self.training_features, self.training_labels)
+        print 'Training error:', self.clf.score(self.training_features, self.training_labels)
 
 
 pos_dir = 'cropped_images/test/'
 neg_dir = 'negative_examples/'
 test = Trainer('svm')
+#test = Trainer('adaboost')
 test.load_data(pos_dir, neg_dir)
 test.train()
 test.save_classifier()
