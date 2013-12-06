@@ -2,7 +2,6 @@ import scipy.signal
 import numpy as np
 
 from PIL import Image
-from sklearn import svm
 
 def get_mags_angles(image):
     tap = np.array([[0, 0, 0], [-1, 0, 1], [0, 0, 0]])
