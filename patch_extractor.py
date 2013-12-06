@@ -98,9 +98,6 @@ class PatchExtractor(object):
     top     = np.tile(row_idxs, (len(col_idxs), 1)).T.flatten()
     bottom  = np.tile(col_idxs, len(row_idxs))
 
-    top     = top     / np.float(image.shape[0] - rf_size[0] + 1)
-    bottom  = bottom  / np.float(image.shape[1] - rf_size[1] + 1)
-
     positions = np.vstack((top, bottom))
 
     return positions

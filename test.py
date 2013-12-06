@@ -8,7 +8,7 @@ from PIL import Image
 from patch_extractor import *
 from utils import *
 
-f = open('classifier_svm.pickle', 'r')
+f = open('classifier_svm_c1.pickle', 'r')
 #f = open('classifier_adaboost.pickle', 'r')
 clf = pickle.load(f)
 f.close()
@@ -16,7 +16,7 @@ f.close()
 base_dir = 'cropped_images/newtest/'
 #base_dir = 'negative_examples/'
 img_paths = glob.glob(base_dir + '*.bmp')
-#img_paths = ['cropped_images/test/voyager_8.bmp']
+img_paths = ['test.jpg']
 
 num_correct = 0
 for img_path in img_paths:

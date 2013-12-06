@@ -27,15 +27,15 @@ class Trainer(object):
         print 'LOADING DATA...'
         positive_files = glob.glob(pos_dir + '*.bmp')
         negative_files = glob.glob(neg_dir + '*.bmp')
-        #positive_files = positive_files[-10:]
-        #negative_files = negative_files[-10:]
+        #positive_files = positive_files[-1:]
+        #negative_files = negative_files[-1:]
         #print positive_files
         #print negative_files
         positive_images = [Image.open(x).convert('L') for x in positive_files]
         negative_images = [Image.open(x).convert('L') for x in negative_files]
         # Turn images from whatever directory structure into a list of images here
         num_bins = 10
-        patch_size = 5
+        patch_size = 20
         stride = patch_size/2
         patch_extractor = PatchExtractor(patch_size, 1, stride=stride)
         self.training_features = []

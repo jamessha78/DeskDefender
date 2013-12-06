@@ -35,11 +35,14 @@ def extract_hog_features(patch_extractor, patch, num_bins=10):
     angle_patches = patch_extractor.extract_all(angles)
     mag_patches = patch_extractor.extract_all(mags)
     feature_vec = np.zeros((angle_patches.shape[0], num_bins))
+    patch_size = patch_extractor.rf_size
     for i in range(angle_patches.shape[0]):
-        angle_patch = angle_patches[i, :].reshape(patch_extractor.rf_size[0], patch_extractor.rf_size[1])
-        mag_patch = mag_patches[i, :].reshape(patch_size, patch_size)
+        angle_patch = angle_patches[i, :].reshape(patch_size[0], patch_size[1])
+        mag_patch = mag_patches[i, :].reshape(patch_size[0], patch_size[1])
         hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
         feature_vec[i, :] = hog_features
+
+    return feature_vec
 
 def get_integral_image(image):
     s = np.zeros(image.shape)
