@@ -1,28 +1,21 @@
-import multiprocessing
+import cProfile
 import pickle
 import glob
 
 from sklearn import svm
-#from sklearn.ensemble import AdaBoostClassifier
+try:
+    from sklearn.ensemble import AdaBoostClassifier
+except ImportError:
+    pass  # Don't have new enough version of sklearn, will error if trying to make an adaboost classifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 
 from patch_extractor import *
 from utils import *
 
 
-NUM_THREADS = 8
-
-
-def extract_features_from_image(image, patch_extractor, patch_size, num_bins):
-    angles, mags = get_mags_angles(image)
-    angle_patches = patch_extractor.extract_all(angles)
-    mag_patches = patch_extractor.extract_all(mags)
-    feature_vec = np.zeros((angle_patches.shape[0], num_bins))
-    for i in range(angle_patches.shape[0]):
-        angle_patch = angle_patches[i, :].reshape(patch_size, patch_size)
-        mag_patch = mag_patches[i, :].reshape(patch_size, patch_size)
-        hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
-        feature_vec[i, :] = hog_features
-    return feature_vec.flatten().tolist()
+TRUE = 1
+FALSE = -1
 
 
 class Cascade(object):
@@ -36,80 +29,54 @@ class Cascade(object):
         self.classifiers = {}  # Maps patch size to a classifier
 
     def load_data(self):
-        print "LOADING IMAGES..."
+        log("LOADING IMAGES...")
         positive_files = glob.glob(self.pos_directory + '*.bmp')
         negative_files = glob.glob(self.neg_directory + '*.bmp')
-        self.positive_images = [Image.open(x).convert('L') for x in positive_files]
-        self.negative_images = [Image.open(x).convert('L') for x in negative_files]
-        print "Done loading images"
+        self.positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
+        self.negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
 
     def generate_cascade(self, patch_sizes):
         if not self.positive_images or not self.negative_images:
             self.load_data()
-        print "making pool"
         pool = multiprocessing.Pool(NUM_THREADS)
         for size in patch_sizes:
-            print "Generating cascade for patch size", size
+            log("Generating cascade for patch size %s" % size)
             self.add_classifier_for_patch_size(size, pool)
         pool.close()
 
     def add_classifier_for_patch_size(self, patch_size, pool=None):
         log("CREATING FEATURES...", False)
         # Turn images from whatever directory structure into a list of images here
-        num_bins = 10
         stride = patch_size/2
         patch_extractor = PatchExtractor(patch_size, 1, stride=stride)
-        #training_features = []
-        #training_labels = []
 
-        # Logic to make patch extraction multi-threaded
-        make_own_pool = pool is None
-        if make_own_pool:
-            pool = multiprocessing.Pool(NUM_THREADS)
-        data = self.positive_images + self.negative_images
-        def data_iterator():
-            for d in data:
-                yield (d, patch_extractor, patch_size, num_bins)
-        use_multithreading = False  # Not ready yet, issues with pickling images
-        if use_multithreading:
-            training_features = pool.map_async(extract_features_from_image, data_iterator()).get(99999)
-        else:
-            training_features = [extract_features_from_image(*d) for d in data_iterator()]
-        training_labels = ['True'] * len(self.positive_images) + ['False'] * len(self.negative_images)
-
-        ## positive examples
-        #for image in self.positive_images:
-        #    training_features.append(extract_features_from_image(image, patch_extractor, patch_size, num_bins))
-        #    training_labels.append('True')
-        ## negative examples
-        #for image in self.negative_images:
-        #    training_features.append(extract_features_from_image(image, patch_extractor, patch_size, num_bins))
-        #    training_labels.append('False')
-        if make_own_pool:
-            pool.close()
-       
-        training_features = np.array(training_features)
+        images = self.positive_images + self.negative_images
+        training_features = extract_hog_features(images, patch_extractor, pool=pool)
+        training_labels = [TRUE] * len(self.positive_images) + [FALSE] * len(self.negative_images)
         training_labels = np.array(training_labels)
+
         if training_features.shape[1] == 0:
-            print "SKIPPING patch size = %s. No training features" % patch_size
+            log("SKIPPING patch size = %s. No training features" % patch_size)
             return
 
         log("TRAINING...", False)
         classifier = self.get_new_classifier()
         classifier.fit(training_features, training_labels)
-        print 'Training accuracy:', classifier.score(training_features, training_labels)
+        #log("Training accuracy: %s" % classifier.score(training_features, training_labels))
         self.classifiers[patch_size] = classifier
 
     def get_new_classifier(self):
         if self.clf_type == 'svm':
-            w = {'True': 50, 'False': 1}
+            w = {TRUE: 50, FALSE: 1}
             return svm.SVC(kernel='rbf', probability=True, class_weight=w)
-        #elif type == 'adaboost':
-        #    self.clf = AdaBoostClassifier(DecisionTreeClassifier(max_depth=3),
-        #                              algorithm="SAMME.R",
-        #                              n_estimators=200)
+        elif self.clf_type == 'random_forest':
+            return RandomForestClassifier(n_estimators=200, n_jobs=-1)
+        elif type == 'adaboost':
+            return AdaBoostClassifier(DecisionTreeClassifier(max_depth=3),
+                                      algorithm="SAMME.R",
+                                      n_estimators=200)
         else:
-            raise ValueError("Unknown classifier type: %s" % type)
+            raise ValueError("Unknown classifier type: %s" % self.clf_type)
 
     def get_classifiers_and_sizes(self):
         # Sort by patch size decreasing
@@ -120,7 +87,7 @@ class Cascade(object):
         return classifiers, sizes
 
     def save_cascade(self, name=None):
-        print 'SAVING...'
+        log('SAVING...')
         self.positive_images = []
         self.negative_images = []
         if name is None:
@@ -131,14 +98,24 @@ class Cascade(object):
 
 
 def main():
+    np.seterr(invalid='ignore')
+
     pos_dir = 'cropped_images/test/'
     neg_dir = 'negative_examples/'
-    test = Cascade(pos_dir, neg_dir, 'svm')
-    #test = Trainer('adaboost')
+
+    #test = Cascade(pos_dir, neg_dir, 'svm')
+    test = Cascade(pos_dir, neg_dir, 'random_forest')
+    #test = Cascade(pos_dir, neg_dir, 'adaboost')
+
     #test.generate_cascade([50, 25, 20, 15, 10, 5, 2])
+    #test.generate_cascade([50, 40, 30, 25, 20])
+    #test.generate_cascade([20, 15, 10, 5])
     test.generate_cascade([20, 15, 10])
+
     test.save_cascade()
+    log("DONE")
 
 
 if __name__ == "__main__":
+    #cProfile.run("main()", sort="tottime")
     main()
