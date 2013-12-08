@@ -15,6 +15,7 @@ USE_THREADING = True
 
 
 def get_mags_angles(image):
+    image = image.astype(np.float32)
     #tap = np.array([[0, 0, 0], [-1, 0, 1], [0, 0, 0]])
     #x_deriv = scipy.signal.convolve2d(image, tap, mode='valid')
     #y_deriv = scipy.signal.convolve2d(image, tap.T, mode='valid')
@@ -35,8 +36,20 @@ def get_hog(patch_angles, patch_mags, bins=10):
 def extract_hog_features(patches, patch_extractor, num_bins=DEFAULT_BINS, pool=None):
     """
     Creates a feature matrix of the shape [num_patches, num_features]. Is multi-threaded for performance
-    @param patches: The input patches
-    @type patches: list[ndarray]
+    @param patches: The input patches.
+    #angles, mags = get_mags_angles(patch)
+    #angle_patches = patch_extractor.extract_all(angles)
+    #mag_patches = patch_extractor.extract_all(mags)
+    #feature_vec = np.zeros((angle_patches.shape[0], num_bins))
+    #patch_size = patch_extractor.rf_size
+    #for i in range(angle_patches.shape[0]):
+    #    angle_patch = angle_patches[i, :].reshape(patch_size[0], patch_size[1])
+    #    mag_patch = mag_patches[i, :].reshape(patch_size[0], patch_size[1])
+    #    hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
+    #    feature_vec[i, :] = hog_features
+
+    #return feature_vec.flatten() Each patch should be in the format returned by utils.preprocess_image
+    @type patches: iterable[preprocessed_image]
     @param patch_extractor: The patch extractor
     @type patch_extractor: patch_extractor.PatchExtractor
     @param pool: A  thread pool used to extract features in parallel
@@ -65,18 +78,35 @@ def extract_hog_features(patches, patch_extractor, num_bins=DEFAULT_BINS, pool=N
 def __extraction_helper(args):
     # Do ugly unpacking to allow this to be called by map for multi-threading
     patch, patch_extractor, num_bins = args
-    angles, mags = get_mags_angles(patch)
-    angle_patches = patch_extractor.extract_all(angles)
-    mag_patches = patch_extractor.extract_all(mags)
-    feature_vec = np.zeros((angle_patches.shape[0], num_bins))
-    patch_size = patch_extractor.rf_size
-    for i in range(angle_patches.shape[0]):
-        angle_patch = angle_patches[i, :].reshape(patch_size[0], patch_size[1])
-        mag_patch = mag_patches[i, :].reshape(patch_size[0], patch_size[1])
-        hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
-        feature_vec[i, :] = hog_features
+    sub_patches = patch_extractor.extract_all(patch)
 
-    return feature_vec.flatten()
+    # The length of each sub-patch should equal num_bins. Not doing error checking to save time
+    feature_vec = np.empty(len(sub_patches) * num_bins)
+    for i, sub_patch in enumerate(sub_patches):
+        feature_vec[i*num_bins:(i+1)*num_bins] = np.sum(np.sum(sub_patch, 0), 0).flatten()
+    return feature_vec
+
+
+def preprocess_image(image, num_bins=DEFAULT_BINS):
+    """
+    Converts the image into a format that is easy to get the hog of.
+    Basically precomutes which and the magnitude of the contribution for each pixel ahead of time.
+    @param image: An n x m matrix of pixel values
+    @type image: np.ndarray
+    @return: An n x m x b matrix, where b is the number of bins and each n x m matrix contains contributions to the
+    corresponding bin.
+    @rtype: np.ndarray
+    """
+    angles, mags = get_mags_angles(image)
+    bins = np.linspace(-np.pi, np.pi, num_bins+1, endpoint=True)
+    bins[-1] += .01  # In case something is exactly the upper bound, want to to catch it with a strict inequality
+    output = np.empty(angles.shape + (num_bins,))
+    for i in range(num_bins):
+        lower_bound = bins[i]
+        upper_bound = bins[i+1]
+        output[:, :, i] = np.logical_and(lower_bound <= angles, angles < upper_bound) * mags
+    return output
+
 
 
 def get_integral_image(image):

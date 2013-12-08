@@ -77,11 +77,11 @@ class PatchExtractor(object):
 
     num_patches = len(row_idxs) * len(col_idxs)
 
-    patches = np.empty((num_patches, self.dim),dtype=self.dtype)
+    patches = [None] * num_patches
     patch_num = 0
     for row in row_idxs:
       for col in col_idxs:
-        patches[patch_num] = image[row:row+rf_size[0], col:col+rf_size[1]].flatten()
+        patches[patch_num] = image[row:row+rf_size[0], col:col+rf_size[1], :]
         patch_num += 1
     if normalize:
       self.normalize_patches(patches)

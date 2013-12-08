@@ -32,8 +32,8 @@ class Cascade(object):
         log("LOADING IMAGES...")
         positive_files = glob.glob(self.pos_directory + '*.bmp')
         negative_files = glob.glob(self.neg_directory + '*.bmp')
-        self.positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
-        self.negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
+        self.positive_images = [preprocess_image(np.array(Image.open(x).convert('L'))) for x in positive_files]
+        self.negative_images = [preprocess_image(np.array(Image.open(x).convert('L'))) for x in negative_files]
 
     def generate_cascade(self, patch_sizes):
         if not self.positive_images or not self.negative_images:
