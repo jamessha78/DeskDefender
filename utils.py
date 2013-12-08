@@ -2,6 +2,8 @@ import scipy.signal
 import numpy as np
 
 from PIL import Image
+import sys
+
 
 def get_mags_angles(image):
     tap = np.array([[0, 0, 0], [-1, 0, 1], [0, 0, 0]])
@@ -11,24 +13,11 @@ def get_mags_angles(image):
     mags = np.sqrt(np.square(x_deriv) + np.square(y_deriv))
     return angles, mags
 
+
 def get_hog(patch_angles, patch_mags, bins=10):
-    angle_block = 2*np.pi/(bins-1)
-    hog = np.zeros([1, bins])
-    size = patch_mags.shape
-    for i in range(size[0]):
-        for j in range(size[1]):
-            mag = patch_mags[i, j]
-            angle = patch_angles[i, j]
-            if angle < 0:
-                 angle += 2*np.pi
-            bin_low = angle//angle_block
-            bin_high = bin_low + 1
-            low_weight = 1 - (patch_angles[i, j] % bins)/bins
-            high_weight = 1 - low_weight
-            hog[0, bin_low] += mag*low_weight
-            hog[0, bin_high] += mag*high_weight
-    hog = hog/max(np.sum(hog), 1e-5)
-    return hog
+    hist, bin_edges = np.histogram(patch_angles, bins, range=(-np.pi, np.pi), weights=patch_mags, density=True)
+    return np.nan_to_num(hist)
+
 
 def extract_hog_features(patch_extractor, patch, num_bins=10):
     angles, mags = get_mags_angles(patch)
@@ -44,6 +33,7 @@ def extract_hog_features(patch_extractor, patch, num_bins=10):
 
     return feature_vec
 
+
 def get_integral_image(image):
     s = np.zeros(image.shape)
     ii = np.zeros(image.shape)
@@ -55,6 +45,14 @@ def get_integral_image(image):
         ii[:, j] = ii[:, j-1] + s[:, j]
     return ii
 
+
+def log(msg, permanent=True):
+    if permanent:
+        print msg
+    else:
+        template = "%s" + " " * 10 + "\r"
+        sys.stdout.write(template % msg)
+        sys.stdout.flush()
 
 #image = Image.open('images/newtest/ew-friends.gif').convert('L')
 #image = np.array(image)
