@@ -19,7 +19,7 @@ class SVMClassifier:
         for i, rf_size in enumerate(rf_sizes):
             self.patch_extractors[i] = PatchExtractor(rf_size, 1, rf_size/2)
 
-        if image_size_hint:
+        if image_size_hint and False:  # Turn off for now, seems to make zoom slow
             num_window_sizes = 4
             target_width = 32
             target_height = 40
@@ -43,13 +43,32 @@ class SVMClassifier:
             pool = multiprocessing.Pool(utils.NUM_THREADS)
 
         start_time = time.time()
-        utils.log_since("START TEST", start_time)
-        preprocessed_image = utils.preprocess_image(im)
-        patch_dicts = self.sliding_window.slide(preprocessed_image)
+        utils.log_since("Starting", start_time)
+        features = utils.get_feature_matrix_from_image(im)
+        print "features.shape", features.shape
+        utils.log_since("Predicting", start_time)
+        classifier = self.clfs[0]
+        output_probs = classifier.predict_proba(features)[:, 1]
+        print "non-zero", np.sum(output_probs != 0)
+        hist, edges = np.histogram(output_probs, 100, (0, .01))
+        for i, h in enumerate(hist):
+            print "%.4f: %s" % (edges[i], "*" * h)
+        outputs = (output_probs >= .5) * 2 - 1
+        num_activations = np.sum(outputs == FALSE)
+        utils.log_since("Done, with %s images" % num_activations, start_time)
+        return
+
+        #patch_dicts = [pd for i, pd in enumerate(patch_dicts) if outputs[i] == TRUE]
+        #if not patch_dicts:
+        #    break  # Filtered out all potential patches
+
+
+
+        utils.log_since("Sliding window", start_time)
+        patch_dicts, images = self.sliding_window.slide(im)
         for patch_extractor, classifier in izip(self.patch_extractors, self.clfs):
             utils.log_since("Extracting features for patch size %s" % patch_extractor.rf_size[0], start_time)
-            patches = (pd['patch'] for pd in patch_dicts)
-            features = utils.extract_hog_features(patches, patch_extractor, pool=pool)
+            features = utils.extract_hog_features(patch_dicts, images, patch_extractor, pool=pool)
 
             utils.log_since("Predicting for patch size %s" % patch_extractor.rf_size[0], start_time)
             outputs = classifier.predict(features)
@@ -60,6 +79,7 @@ class SVMClassifier:
 
         self.detections = patch_dicts
         utils.log_since("DONE", start_time)
+
         if utils.USE_THREADING:
             pool.close()
 
@@ -67,8 +87,8 @@ class SVMClassifier:
         im = im.convert("RGB")
         draw = ImageDraw.Draw(im)
         for detection in self.detections:
-            pos = tuple(detection['position'])
-            rf_size = detection['rf_size']
+            pos = tuple(detection['orig_position'])
+            rf_size = detection['orig_size']
             draw.polygon(
                 [
                     (pos[1], pos[0]),
@@ -82,7 +102,7 @@ class SVMClassifier:
         im.show()
 
 
-from trainer import Cascade, TRUE  # Cascade needed for unpickling
+from trainer import Cascade, TRUE, FALSE  # Cascade needed for unpickling
 
 
 def main():
@@ -93,17 +113,21 @@ def main():
     #cascade = pickle.load(open('cascade_svm.pickle'))
     classifiers, patch_sizes = cascade.get_classifiers_and_sizes()
 
-    #im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
+    #im = Image.open('test.png').convert('L')
+    #im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
+    im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
-    im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
+    #im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')
     width, height = im.size
-    print height, width
 
-    #svm_classifier = SVMClassifier(classifiers[:-2], patch_sizes[:-2], (height, width))
+    start, end = 4, len(classifiers)
+    #svm_classifier = SVMClassifier([classifiers[0], classifiers[3]], [patch_sizes[0], patch_sizes[3]])
+    #svm_classifier = SVMClassifier(classifiers[start:end], patch_sizes[start:end], (height, width))
     svm_classifier = SVMClassifier(classifiers, patch_sizes, (height, width))
 
     im_np = np.array(im)
+    #cProfile.runctx("svm_classifier.test(im_np)", None, locals(), sort='tottime')
     svm_classifier.test(im_np)
     svm_classifier.draw(im)
 

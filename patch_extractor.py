@@ -102,6 +102,20 @@ class PatchExtractor(object):
 
     return positions
 
+  def patch_positions_from_position(self, base_pos, base_size):
+
+      rf_size = self.rf_size
+
+      row_idxs = range(0, base_size[0] - rf_size[0] + 1, self.stride)
+      col_idxs = range(0, base_size[1] - rf_size[1] + 1, self.stride)
+
+      top     = np.tile(row_idxs, (len(col_idxs), 1)).T.flatten() + base_pos[0]
+      bottom  = np.tile(col_idxs, len(row_idxs)) + base_pos[1]
+
+      positions = np.vstack((top, bottom))
+
+      return positions
+
   # reg = regularization parameter
   def normalize_patches(self, patches, reg=10):
     patches -= np.mean(patches,axis=1).reshape( (patches.shape[0], 1) )

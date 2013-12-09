@@ -14,6 +14,59 @@ USE_THREADING = True
 #USE_THREADING = False
 
 
+def do_grouping(image, cell_size, x_offset=0, y_offset=0):
+    h, w, d = image.shape
+    rows = (h - y_offset) // cell_size
+    cols = (w - x_offset) // cell_size
+    grouped = np.empty((rows, cols, d))
+    assert isinstance(grouped, np.ndarray)
+    for r in xrange(y_offset, rows + y_offset):
+        for c in xrange(x_offset, cols + x_offset):
+            grouped[r, c] = image[r:r+cell_size, c:c+cell_size, :].sum((0, 1))
+    return grouped
+
+
+def get_feature_matrix_from_image(image, block_size=5, window_size=(38, 30)):
+    """
+    @param image: A 2d array representing an image
+    @param block_size: the size of a single block, must be even
+    @return: A feature matrix of shape [num_samples, num_features]
+    """
+    #if block_size % 2 != 0:
+    #    raise ValueError("Block size must be even")
+    cell_size = block_size / 2
+    image = preprocess_image(image)
+    h, w, d = image.shape
+    rows = h // cell_size
+    cols = w // cell_size
+
+    grouped = do_grouping(image, cell_size)
+
+    window_height = window_size[0] // cell_size
+    window_width = window_size[1] // cell_size
+    num_cells_wide = cols - (window_width - 1)
+    num_cells_tall = rows - (window_height - 1)
+
+    # Todo:
+    features = []
+    for i in xrange(num_cells_tall):
+        for j in xrange(num_cells_wide):
+            window = grouped[i:i+window_height, j:j+window_width, :]
+            #aligned = do_grouping(window, 2, 0, 0)
+            #vert_offset = do_grouping(window, 2, 1, 0)
+            #horiz_offset = do_grouping(window, 2, 0, 1)
+            #both_offset = do_grouping(window, 2, 1, 1)
+            features.append(np.hstack((
+                window.flatten(),
+                #aligned.flatten(),
+                #vert_offset.flatten(),
+                #horiz_offset.flatten(),
+                #both_offset.flatten()
+            )))
+    features = np.vstack(features)
+    return features
+
+
 def get_mags_angles(image):
     image = image.astype(np.float32)
     #tap = np.array([[0, 0, 0], [-1, 0, 1], [0, 0, 0]])
@@ -33,23 +86,13 @@ def get_hog(patch_angles, patch_mags, bins=10):
     return np.nan_to_num(hist)
 
 
-def extract_hog_features(patches, patch_extractor, num_bins=DEFAULT_BINS, pool=None):
+def extract_hog_features(patch_dicts, images, patch_extractor, num_bins=DEFAULT_BINS, pool=None):
     """
     Creates a feature matrix of the shape [num_patches, num_features]. Is multi-threaded for performance
-    @param patches: The input patches.
-    #angles, mags = get_mags_angles(patch)
-    #angle_patches = patch_extractor.extract_all(angles)
-    #mag_patches = patch_extractor.extract_all(mags)
-    #feature_vec = np.zeros((angle_patches.shape[0], num_bins))
-    #patch_size = patch_extractor.rf_size
-    #for i in range(angle_patches.shape[0]):
-    #    angle_patch = angle_patches[i, :].reshape(patch_size[0], patch_size[1])
-    #    mag_patch = mag_patches[i, :].reshape(patch_size[0], patch_size[1])
-    #    hog_features = get_hog(angle_patch, mag_patch, bins=num_bins)
-    #    feature_vec[i, :] = hog_features
-
-    #return feature_vec.flatten() Each patch should be in the format returned by utils.preprocess_image
-    @type patches: iterable[preprocessed_image]
+    @param patch_dicts: The input patch dictionaries.
+    @type patch_dicts: list[dict]
+    @param images: The list of downsampled images
+    @type images: list[ndarray]
     @param patch_extractor: The patch extractor
     @type patch_extractor: patch_extractor.PatchExtractor
     @param pool: A  thread pool used to extract features in parallel
@@ -58,8 +101,8 @@ def extract_hog_features(patches, patch_extractor, num_bins=DEFAULT_BINS, pool=N
     @rtype: ndarray
     """
     def data_iterator():
-        for patch in patches:
-            yield patch, patch_extractor, num_bins
+        for patch in patch_dicts:
+            yield patch, images, patch_extractor, num_bins
     make_own_pool = pool is None and USE_THREADING
     if make_own_pool:
         pool = multiprocessing.Pool(NUM_THREADS)
@@ -77,13 +120,19 @@ def extract_hog_features(patches, patch_extractor, num_bins=DEFAULT_BINS, pool=N
 
 def __extraction_helper(args):
     # Do ugly unpacking to allow this to be called by map for multi-threading
-    patch, patch_extractor, num_bins = args
-    sub_patches = patch_extractor.extract_all(patch)
+    patch, images, patch_extractor, num_bins = args
+    positions = patch_extractor.patch_positions_from_position(patch['patch_position'], patch['patch_size'])
+    sub_patch_size = np.array(patch_extractor.rf_size)
+    num_patches = positions.shape[1]
+    image = images[patch['image_index']]
+    #sub_patches = patch_extractor.extract_all(patch)
 
     # The length of each sub-patch should equal num_bins. Not doing error checking to save time
-    feature_vec = np.empty(len(sub_patches) * num_bins)
-    for i, sub_patch in enumerate(sub_patches):
-        feature_vec[i*num_bins:(i+1)*num_bins] = np.sum(np.sum(sub_patch, 0), 0).flatten()
+    feature_vec = np.empty(num_patches * num_bins)
+    for i in xrange(num_patches):
+        start = positions[:, i]
+        end = start + sub_patch_size
+        feature_vec[i*num_bins:(i+1)*num_bins] = image[start[0]:end[0], start[1]:end[1], :].sum((0, 1))
     return feature_vec
 
 
@@ -101,12 +150,12 @@ def preprocess_image(image, num_bins=DEFAULT_BINS):
     bins = np.linspace(-np.pi, np.pi, num_bins+1, endpoint=True)
     bins[-1] += .01  # In case something is exactly the upper bound, want to to catch it with a strict inequality
     output = np.empty(angles.shape + (num_bins,))
+    assert isinstance(output, np.ndarray)
     for i in range(num_bins):
         lower_bound = bins[i]
         upper_bound = bins[i+1]
         output[:, :, i] = np.logical_and(lower_bound <= angles, angles < upper_bound) * mags
     return output
-
 
 
 def get_integral_image(image):
