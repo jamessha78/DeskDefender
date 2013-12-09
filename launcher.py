@@ -80,7 +80,6 @@ class Launcher(object):
 
         self.DEVICE.set_configuration()
 
-
     def send_cmd(self, cmd):
         if "Thunder" == self.DEVICE_TYPE:
             self.DEVICE.ctrl_transfer(0x21, 0x09, 0, 0, [0x02, cmd, 0x00,0x00,0x00,0x00,0x00,0x00])
@@ -130,8 +129,24 @@ class Launcher(object):
         else:
             print "Error: Unknown command: '%s'" % command
 
-
     def run_command_set(self, commands):
         for cmd, value in commands:
             self.run_command(cmd, value)
 
+def main(args):
+    if len(args) < 2:
+        usage()
+        sys.exit(1)
+    
+    launcher = Launcher()
+
+    # Process any passed commands or command_sets
+    command = args[1]
+    value = 0
+    if len(args) > 2:
+        value = int(args[2])
+
+    launcher.run_command(command, value)
+
+if __name__ == '__main__':
+    main(sys.argv)

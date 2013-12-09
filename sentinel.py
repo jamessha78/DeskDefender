@@ -1,9 +1,9 @@
 import cv2
-import Image
 import time
 import freenect
 import curses
 import numpy as np
+from PIL import Image
 
 from launcher import *
 
@@ -13,15 +13,19 @@ class Sentinel(object):
         haar_path = '/usr/local/Cellar/opencv/2.4.6.1/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml'
         self.detector = cv2.CascadeClassifier(haar_path)
 
-        print 'INITING LAUNCHER...'
+        print 'ZEROING LAUNCHER...'
         self.launcher = Launcher()
         # zero the launcher
-        self.launcher.run_command('zero', 0)
+        self.launcher.run_command('down', 1000)
+        self.launcher.run_command('left', 6000)
+        self.launcher.run_command('right', 3000)
+        self.launcher.run_command('up', 500)
+ 
         print 'DONE'
         self.fx = 540
         self.fy = 540
-        self.cx = 0
-        self.cy = 0
+        self.cx = 340
+        self.cy = 240
         self.depth_constant = 0.0393701 # mm to inches
 
         freenect.sync_get_depth() 
@@ -43,17 +47,42 @@ class Sentinel(object):
         cv2.imshow('test', image)
         cv2.waitKey(10)
 
+    def display_image(self, image):
+        cv2.imshow('test', image)
+        cv2.waitKey(10)
+
     def get_faces(self, image):
         faces = self.detector.detectMultiScale(image, 1.3, 3)
         return faces
+
+    def update_face(self, prev_face_loc, depth_map):
+        face_pix = self.get_face_pix(prev_face_loc)
+        prev_face_depth = prev_face_loc[2]
+        depth_map_cpy = np.copy(depth_map)
+        depth_map_cpy[0:face_pix[1]-70, :] = 2047
+        depth_map_cpy[face_pix[1]+70:, :] = 2047
+        depth_map_cpy[:, 0:face_pix[0]-70] = 2047
+        depth_map_cpy[:, face_pix[0]+70:] = 2047
+        window = abs(depth_map_cpy - prev_face_depth)
+        good_indices = np.where(window < 5)
+        if not good_indices[0].any():
+            return "Wrong"
+        x = np.min(good_indices[1])
+        y = np.min(good_indices[0])
+        w = np.max(good_indices[1]) - x
+        h = np.max(good_indices[0]) - y
+        return [x, y, w, h]
 
     def get_face_depths(self, faces, depth_map):
         face_depths = []
         for face in faces:
             face_map = depth_map[face[1]:face[1]+face[3], face[0]:face[0]+face[2]]
+            med = np.median(face_map)
+            bad_indices = abs(face_map - med) > 3
+            face_map[bad_indices] = 0
             num_nonzero = np.count_nonzero(face_map)
             if num_nonzero != 0:
-                face_depths.append(face_map.sum()/num_nonzero*self.depth_constant)
+                face_depths.append(face_map.sum()/num_nonzero)
             else:
                 face_depths.append(None)
             
@@ -62,28 +91,23 @@ class Sentinel(object):
     def get_face_loc(self, face, depth):
         face_z = depth
         face_x = (face[0]-self.cx)*face_z/self.fx
-        face_y = (face[1]-self.cx)*face_z/self.fy
+        face_y = (face[1]-self.cy)*face_z/self.fy
         return (face_x, face_y, face_z)
 
-    def aim_init(self, face_centers, face_depths):
-        # just take first detection for now
-        face_loc = self.get_face_loc(face_centers[0], face_depths[0])
-        # TODO implement up-down angle
-        # assume launcher (origin) is at bottom left hand corner of image
-        # rotation of 100 ~ 5.5 inches at 60 inches
-        lr_value = face_loc[0]/(5.5/60*face_loc[2])*100
-        print lr_value
-        self.launcher.run_command('right', lr_value)
+    def get_face_pix(self, face_loc):
+        x = self.fx*face_loc[0]/face_loc[2] + self.cx
+        y = self.fy*face_loc[1]/face_loc[2] + self.cy
+        return (x, y)
 
-    def aim_follow(self, face_centers, face_depths):
+    def aim_follow(self, face_boxes, face_centers, face_depths, prev_face_loc, log_f):
         best_face = None
         best_dist = float('inf')
         best_face_idx = -1
         for face, depth, i in zip(face_centers, face_depths, range(len(face_centers))):
             face_loc = self.get_face_loc(face, depth)
-            dist = np.sqrt((face_loc[0] - self.prev_face_loc[0])**2 + \
-                           (face_loc[1] - self.prev_face_loc[1])**2 + \
-                           (face_loc[2] - self.prev_face_loc[2])**2)
+            dist = np.sqrt((face_loc[0] - prev_face_loc[0])**2 + \
+                           (face_loc[1] - prev_face_loc[1])**2 + \
+                           (face_loc[2] - prev_face_loc[2])**2)
             if dist < best_dist:
                 best_dist = dist
                 best_face = face_loc
@@ -91,101 +115,94 @@ class Sentinel(object):
 
         if not best_face: # if we ended up trying to track a false positive
             return
-       
-        lr_value = (best_face[0]-self.prev_face_loc[0])/(5.5/60*best_face[2])*100
 
-        if abs(lr_value) > 10: # noise in the measurements
-            print lr_value
-            if lr_value < 0:
-                self.launcher.run_command('left', -lr_value)
-            else:
-                self.launcher.run_command('right', lr_value)
+        face = face_boxes[best_face_idx]
+       
+        lr_theta_1 = np.arcsin(best_face[0]/best_face[2])
+        lr_theta_2 = np.arcsin(prev_face_loc[0]/prev_face_loc[2])
+        lr_value = int((lr_theta_1 - lr_theta_2)*180/np.pi*6000/360)
+        ud_theta_1 = np.arcsin(best_face[1]/best_face[2])
+        ud_theta_2 = np.arcsin(prev_face_loc[1]/prev_face_loc[2])
+        ud_value = int((ud_theta_1 - ud_theta_2)*180/np.pi*1000/30)
+        
+        if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
+            if abs(lr_value) > 10: # noise in the measurements
+                if lr_value < 0 and face[1]+face[3] < 640:
+                    self.launcher.run_command('left', -lr_value)
+                elif lr_value > 0 and face[1] > 0:
+                    self.launcher.run_command('right', lr_value)
+            if abs(ud_value) > 10: # noise in the measurements
+                if ud_value < 0 and face[0]+face[2] < 480:
+                    self.launcher.run_command('up', -ud_value)
+                elif ud_value > 0 and face[0] > 0:
+                    self.launcher.run_command('down', ud_value)
+        
+        face_center = face_centers[best_face_idx]
+        log_f.write('{0}, {1}\n'.format(face_center[0], face_center[1]))
+        log_f.write('{0}, {1}, {2}\n'.format(best_face[0], best_face[1], best_face[2]))
+        log_f.write('{0}, {1}, {2}\n'.format(prev_face_loc[0], prev_face_loc[1], prev_face_loc[2]))
+        log_f.write('{0} {1}\n\n'.format(lr_value, ud_value))
 
         return best_face_idx
 
-    def track(self, win):
+    def guard(self, win):
+    #def guard(self):
         win.nodelay(True) # make getkey() not wait
-        x = 0
-        self.active_break = False
+        stupid = 0
+        print 'TRACKING...'
+        faces = ()
+        prev_face_loc = (1e-10, 1e-10, 20) # start pointing at origin
+        ticker = 0
+        f = open('log.txt', 'w+')
         while True:
             win.clear()
-            win.addstr(0,0,str(x))
-            x += 1
+            win.addstr(0,0,str(stupid))
+            stupid += 1
             try:
                 key = win.getkey()
             except: # in no delay mode getkey raise and exeption if no key is press 
                 key = None
-            if key == "q": # of we got a q then break
-                self.active_break = True
+            if key == "q": # exit on 'q'
                 break
-
-            faces = ()
-            for i in range(30): # try 30 times before giving up
-                image = freenect.sync_get_video()[0]
-                image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                depth_map = freenect.sync_get_depth()[0]
-
-                faces = self.get_faces(image)
-                if faces != ():
-                    break
-
-            if faces == ():
-                print 'LOST FACE... RESETTING...'
-                self.launcher.run_command('zero', 0)
-                break
-
-            face_centers = [(x[0]+x[2]/2, x[1]+x[3]/2) for x in faces]
-            face_depths = self.get_face_depths(faces, depth_map)
-
-            idx = self.aim_follow(face_centers, face_depths)
-            self.display_face(faces[idx], image)
+            if key == " ": # fire on space
+                self.launcher.run_command('fire', 1)
             
-            self.prev_face_loc = self.get_face_loc(face_centers[idx], face_depths[idx])
-
-
-    def guard(self, win):
-        win.nodelay(True) # make getkey() not wait
-        x = 0
-        print 'LOOKING FOR FACES...'
-        faces = ()
-        while faces == ():
-            win.clear()
-            win.addstr(0,0,str(x))
-            x += 1
-            try:
-                key = win.getkey()
-            except: # in no delay mode getkey raise and exeption if no key is press 
-                key = None
-            if key == "q": # of we got a space then break
-                break
-
             image = freenect.sync_get_video()[0]
             image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            depth_map = freenect.sync_get_depth()[0]
-            self.display_faces(faces, image)
-
+            depth_map = freenect.sync_get_depth()[0]*self.depth_constant
+            
             faces = self.get_faces(image)
-            if faces == ():
-                continue
+           
+            if faces != ():
+                ticker = 0
+            if faces == () and ticker < 30 and prev_face_loc != (1e-10, 1e-10, 20): # fall back to depth tracking
+                faces = [self.update_face(prev_face_loc, depth_map)]
+                ticker += 1
+                if faces == (): # this can fail too
+                    ticker = 30
 
-            print 'FOUND FACE...'
+            if faces == () or faces == ["Wrong"]:
+                self.display_image(image)
+                continue
             face_centers = [(x[0]+x[2]/2, x[1]+x[3]/2) for x in faces]
             face_depths = self.get_face_depths(faces, depth_map)
-            self.display_faces(faces, image)
 
-            print 'AIMING...'
-            self.aim_init(face_centers, face_depths)
+            if face_depths == [None]:
+                print 'Unable to acquire face depth, check thresholds'
+                continue
 
-            print 'TRACKING...'
-            self.prev_face_loc = self.get_face_loc(face_centers[0], face_depths[0])
-            curses.wrapper(self.track)
-            faces = ()
-            if self.active_break:
-                break
+            idx = self.aim_follow(faces, face_centers, face_depths, prev_face_loc, f)
+            self.display_face(faces[idx], image)
+            
+            face = faces[idx]
+            if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
+                prev_face_loc = self.get_face_loc(face_centers[idx], face_depths[idx])
 
+        f.close()
     def activate(self):
         # Giant hacks to quit
         curses.wrapper(self.guard)
+        #self.guard()
 
 sentinel = Sentinel()
 sentinel.activate()
