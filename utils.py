@@ -20,58 +20,80 @@ def do_grouping(image, cell_size, x_offset=0, y_offset=0):
     cols = (w - x_offset) // cell_size
     grouped = np.empty((rows, cols, d))
     assert isinstance(grouped, np.ndarray)
-    for r in xrange(y_offset, rows + y_offset):
-        for c in xrange(x_offset, cols + x_offset):
-            grouped[r, c] = image[r:r+cell_size, c:c+cell_size, :].sum((0, 1))
+    for r in xrange(rows):
+        for c in xrange(cols):
+            start_row = r * cell_size + y_offset
+            end_row = (r + 1) * cell_size + y_offset
+            start_col = c * cell_size + x_offset
+            end_col = (c + 1) * cell_size + x_offset
+            grouped[r, c] = image[start_row:end_row, start_col:end_col, :].sum((0, 1))
     return grouped
 
 
-def get_feature_matrix_from_image(image, block_size=5, window_size=(38, 30)):
+def num_groups(height, width, stride, x_offset, y_offset):
+    rows = (height - y_offset) // stride
+    cols = (width - x_offset) // stride
+    return rows * cols
+
+
+def get_feature_matrix_from_image(image, block_size=6, window_size=(38, 30)):
     """
     @param image: A 2d array representing an image
     @param block_size: the size of a single block, must be even
-    @return: A feature matrix of shape [num_samples, num_features]
+    @return: A feature matrix of shape [num_windows, num_features]
     """
+    #start_time = time.time()
     #if block_size % 2 != 0:
     #    raise ValueError("Block size must be even")
-    cell_size = block_size / 2
+    #cell_size = block_size / 2
+    cell_size = block_size
     image = preprocess_image(image)
-    h, w, d = image.shape
-    rows = h // cell_size
-    cols = w // cell_size
-
     grouped = do_grouping(image, cell_size)
+    #log_since("Grouped initial image", start_time)
+
+    rows, cols, d = grouped.shape
 
     window_height = window_size[0] // cell_size
     window_width = window_size[1] // cell_size
-    num_cells_wide = cols - (window_width - 1)
-    num_cells_tall = rows - (window_height - 1)
+    num_cells_wide = cols/2 - (window_width/2 - 1)
+    num_cells_tall = rows/2 - (window_height/2 - 1)
 
-    # Todo:
-    features = []
+    #aligned_size = num_groups(window_height, window_width, 2, 0, 0) * d
+    #vert_offset_size = num_groups(window_height, window_width, 2, 0, 1) * d
+    #horiz_offset_size = num_groups(window_height, window_width, 2, 1, 0) * d
+    #both_offset_size = num_groups(window_height, window_width, 2, 1, 1) * d
+
+    num_windows = num_cells_wide * num_cells_tall
+    #num_features_per_window = aligned_size + vert_offset_size + horiz_offset_size + both_offset_size
+    num_features_per_window = window_height * window_width * d
+    features = np.empty((num_windows, num_features_per_window))
+    positions = np.empty((num_windows, 4))
+    assert isinstance(features, np.ndarray)
+
+    cur_win = 0
+    #log_since("Sliding window", start_time)
     for i in xrange(num_cells_tall):
         for j in xrange(num_cells_wide):
-            window = grouped[i:i+window_height, j:j+window_width, :]
-            #aligned = do_grouping(window, 2, 0, 0)
-            #vert_offset = do_grouping(window, 2, 1, 0)
-            #horiz_offset = do_grouping(window, 2, 0, 1)
-            #both_offset = do_grouping(window, 2, 1, 1)
-            features.append(np.hstack((
-                window.flatten(),
-                #aligned.flatten(),
-                #vert_offset.flatten(),
-                #horiz_offset.flatten(),
-                #both_offset.flatten()
-            )))
-    features = np.vstack(features)
-    return features
+            features[cur_win, :] = grouped[i:i+window_height, j:j+window_width, :].flatten()
+            #window = grouped[i:i+window_height, j:j+window_width, :]
+            #cur_feat = 0
+            #features[cur_win, cur_feat:cur_feat+aligned_size] = do_grouping(window, 2, 0, 0).flatten()
+            #cur_feat += aligned_size
+            #features[cur_win, cur_feat:cur_feat+vert_offset_size] = do_grouping(window, 2, 0, 1).flatten()
+            #cur_feat += vert_offset_size
+            #features[cur_win, cur_feat:cur_feat+horiz_offset_size] = do_grouping(window, 2, 1, 0).flatten()
+            #cur_feat += horiz_offset_size
+            #features[cur_win, cur_feat:cur_feat+both_offset_size] = do_grouping(window, 2, 1, 1).flatten()
+
+            positions[cur_win, :] = np.array(
+                [i*cell_size, j*cell_size, (i+window_height)*cell_size, (j+window_width)*cell_size])
+            cur_win += 1
+    #log_since("Done with feature extraction", start_time)
+    return features, positions
 
 
 def get_mags_angles(image):
     image = image.astype(np.float32)
-    #tap = np.array([[0, 0, 0], [-1, 0, 1], [0, 0, 0]])
-    #x_deriv = scipy.signal.convolve2d(image, tap, mode='valid')
-    #y_deriv = scipy.signal.convolve2d(image, tap.T, mode='valid')
 
     # Faster way to compute the tap derivative
     x_deriv = image[1:-1, :-2] - image[1:-1, 2:]

@@ -33,9 +33,12 @@ class SVMClassifier:
             print window_scales
         else:
             window_scales = [1, .5, .25]
+        self.scales = window_scales
 
         self.sliding_window = SlidingWindow(1, window_scales, [5]*len(window_scales))
         self.detections = []
+        self.positions = None
+        self.best_position = None
 
     def test(self, im):
         pool = None
@@ -44,19 +47,40 @@ class SVMClassifier:
 
         start_time = time.time()
         utils.log_since("Starting", start_time)
-        features = utils.get_feature_matrix_from_image(im)
-        print "features.shape", features.shape
+        all_features = []
+        all_positions = []
+        for scale in self.scales:
+            if scale != 1:
+                downsampled_image = ndimage.interpolation.zoom(im, scale)
+            else:
+                downsampled_image = im
+            features, positions = utils.get_feature_matrix_from_image(downsampled_image)
+            positions /= scale
+            all_features.append(features)
+            all_positions.append(positions)
+        all_features = np.vstack(all_features)
+        all_positions = np.vstack(all_positions)
+        #print "features.shape", features.shape
         utils.log_since("Predicting", start_time)
         classifier = self.clfs[0]
-        output_probs = classifier.predict_proba(features)[:, 1]
+        output_probs = classifier.predict_proba(all_features)[:, 1]
         print "non-zero", np.sum(output_probs != 0)
-        hist, edges = np.histogram(output_probs, 100, (0, .01))
+        hist, edges = np.histogram(output_probs, 100, (0, 1))
         for i, h in enumerate(hist):
             print "%.4f: %s" % (edges[i], "*" * h)
-        outputs = (output_probs >= .5) * 2 - 1
-        num_activations = np.sum(outputs == FALSE)
-        utils.log_since("Done, with %s images" % num_activations, start_time)
-        return
+        meets_threshold = output_probs > .25
+        output_probs = output_probs[meets_threshold]
+        self.positions = all_positions[meets_threshold]
+
+        if self.positions.shape[0]:
+            best_activation = np.argmax(output_probs)
+            self.best_position = self.positions[best_activation, :].tolist()
+        else:
+            self.best_position = None
+
+        print "positions shape", self.positions.shape
+        utils.log_since("Done", start_time)
+        return self.best_position
 
         #patch_dicts = [pd for i, pd in enumerate(patch_dicts) if outputs[i] == TRUE]
         #if not patch_dicts:
@@ -86,18 +110,40 @@ class SVMClassifier:
     def draw(self, im):
         im = im.convert("RGB")
         draw = ImageDraw.Draw(im)
-        for detection in self.detections:
-            pos = tuple(detection['orig_position'])
-            rf_size = detection['orig_size']
+        if self.positions is not None:
+            for top, left, bottom, right in self.positions:
+                draw.polygon(
+                    [
+                        (left, top),
+                        (right, top),
+                        (right, bottom),
+                        (left, bottom)
+                    ],
+                    outline="#0f0"
+                )
+        if self.best_position is not None:
+            top, left, bottom, right = self.best_position
             draw.polygon(
                 [
-                    (pos[1], pos[0]),
-                    (pos[1] + rf_size[1], pos[0]),
-                    (pos[1] + rf_size[1], pos[0] + rf_size[0]),
-                    (pos[1], pos[0] + rf_size[0])
+                    (left, top),
+                    (right, top),
+                    (right, bottom),
+                    (left, bottom)
                 ],
                 outline="#f00"
             )
+        #for detection in self.detections:
+        #    pos = tuple(detection['orig_position'])
+        #    rf_size = detection['orig_size']
+        #    draw.polygon(
+        #        [
+        #            (pos[1], pos[0]),
+        #            (pos[1] + rf_size[1], pos[0]),
+        #            (pos[1] + rf_size[1], pos[0] + rf_size[0]),
+        #            (pos[1], pos[0] + rf_size[0])
+        #        ],
+        #        outline="#f00"
+        #    )
         im.save('test.bmp')
         im.show()
 
@@ -113,9 +159,9 @@ def main():
     #cascade = pickle.load(open('cascade_svm.pickle'))
     classifiers, patch_sizes = cascade.get_classifiers_and_sizes()
 
-    #im = Image.open('test.png').convert('L')
+    im = Image.open('test.png').convert('L')
     #im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
-    im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
+    #im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')

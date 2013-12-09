@@ -37,7 +37,7 @@ class Cascade(object):
         positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
         negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
         self.training_features = np.vstack(
-            (utils.get_feature_matrix_from_image(im) for im in positive_images + negative_images)
+            (utils.get_feature_matrix_from_image(im)[0] for im in positive_images + negative_images)
         )
         self.training_labels = [TRUE] * len(positive_images) + [FALSE] * len(negative_images)
         self.training_labels = np.array(self.training_labels)
@@ -46,21 +46,20 @@ class Cascade(object):
     def generate_cascade(self, patch_sizes):
         if self.training_features is None:
             self.load_data()
-        pool = multiprocessing.Pool(NUM_THREADS)
+        #pool = multiprocessing.Pool(NUM_THREADS)
         for size in patch_sizes:
             log("Generating cascade for patch size %s" % size)
-            self.add_classifier_for_patch_size(size, pool)
-        pool.close()
+            self.add_classifier_for_patch_size(size)
+        #pool.close()
 
     def add_classifier_for_patch_size(self, patch_size):
         log("TRAINING...", False)
         classifier = self.get_new_classifier()
         classifier.fit(self.training_features, self.training_labels)
-        print "Training accuracy", classifier.score(self.training_features, self.training_labels)
+        print "\nTraining accuracy", classifier.score(self.training_features, self.training_labels)
         correct_examples = self.training_labels == TRUE
         correct_features = self.training_features[correct_examples]
         correct_labels = self.training_labels[correct_examples]
-        print "Training accuracy", classifier.score(self.training_features, self.training_labels)
         print "Training accuracy for positive examples", classifier.score(correct_features, correct_labels)
         #log("Training accuracy: %s" % classifier.score(training_features, training_labels))
         self.classifiers[patch_size] = classifier
