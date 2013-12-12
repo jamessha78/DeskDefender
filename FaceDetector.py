@@ -94,7 +94,7 @@ class FaceDetector:
     def draw(self, im):
         im = im.convert("RGB")
         draw = ImageDraw.Draw(im)
-        if self.positions is not None and self.likelihoods is not None:
+        if self.positions is not None and self.likelihoods is not None and len(self.likelihoods) > 0:
             pairs = izip(self.likelihoods, self.positions)
             sorted_pairs = sorted(pairs, key=lambda x: x[0])
             min_likelihood = np.min(self.likelihoods)

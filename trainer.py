@@ -88,7 +88,7 @@ def main():
     neg_dir = ['negative_examples/']
 
     estimators = [10, 50, 200]
-    max_depths = [3, 4, 5]
+    max_depths = [2, 3, 4]
     thresholds = [.1, .1, .3]
     # estimators = [200]
     # max_depths = [10]

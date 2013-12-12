@@ -10,61 +10,70 @@ import math
 
 DEFAULT_BINS = 10
 NUM_THREADS = 8
-USE_THREADING = True
-#USE_THREADING = False
+# USE_THREADING = True
+USE_THREADING = False
 
 
-def extract_hog_features(patch_dicts, images, patch_extractor, num_bins=DEFAULT_BINS, pool=None):
+def parallelize(function, args, should_map_over_arg, pool=None):
     """
-    Creates a feature matrix of the shape [num_patches, num_features]. Is multi-threaded for performance
-    @param patch_dicts: The input patch dictionaries.
-    @type patch_dicts: list[dict]
-    @param images: The list of downsampled images
-    @type images: list[ndarray]
-    @param patch_extractor: The patch extractor
-    @type patch_extractor: patch_extractor.PatchExtractor
-    @param pool: A  thread pool used to extract features in parallel
-    @type pool: multiprocessing.Pool
-    @return: Matrix of features
-    @rtype: ndarray
+    A helper function to parallelize calling a function. Only runs in parallel if the USE_THREADING constant is set
+    to True.
+    @param function: The function to be mapped over
+    @param args: A list of the args to pass to the function. If an arg changes for each iteration, it should be a list
+    itself, otherwise if it is the same for each map iteration, it can be any arbitrary value
+    @param should_map_over_arg: A list the same length as args containing booleans indicating whether or not the
+    corresponding argument changes over each iteration.
+    @param pool: The processor pool to run the operation over. If omitted a processor pool will be created.
+    @return: An array containing the result of mapping the function over the args
     """
-    def data_iterator():
-        for patch in patch_dicts:
-            yield patch, images, patch_extractor, num_bins
+    num_args_list = [len(arg) for i, arg in enumerate(args) if should_map_over_arg[i]]
+    num_iterations = num_args_list[0]
+    if not all(map(lambda x: x == num_iterations, num_args_list)):
+        raise ValueError("Not all changing args are the lists of the same length")
+
     make_own_pool = pool is None and USE_THREADING
     if make_own_pool:
         pool = multiprocessing.Pool(NUM_THREADS)
+
+    def get_arg(arg_index, map_iter):
+        if should_map_over_arg[arg_index]:
+            return args[arg_index][map_iter]
+        else:
+            return args[arg_index]
+
+    def args_generator():
+        for map_iteration in range(num_iterations):
+            yield [get_arg(arg_index, map_iteration) for arg_index in range(len(args))]
+
     if USE_THREADING:
-        features = pool.map_async(__extraction_helper, data_iterator()).get(99999)
+        chunksize = len(args) // NUM_THREADS + 1
+        rtn = pool.map_async(function, args_generator(), chunksize=chunksize).get(99999)
     else:
-        features = map(__extraction_helper, data_iterator())
-    features = np.array(features)
+        rtn = map(function, args_generator())
 
     if make_own_pool:
         pool.close()
 
-    return features
+    return rtn
 
 
-def extract_features(image, cell_size, window_size):
+def extract_features(image, cell_size, window_size, pool=None):
     """
     @param image: A 2d array representing an image
     @param cell_size: the size of a single cell, must be even
     @return: A feature matrix of shape [num_windows, num_features]
     """
+# def __extract_row(image, cell_size, window_size):
     image = preprocess_image(image, cell_size)
     h, w, d = image.shape
     rows = h // cell_size
     cols = w // cell_size
-    grouped = np.empty((rows, cols, d))
-    assert isinstance(grouped, np.ndarray)
-    for r in xrange(rows):
-        for c in xrange(cols):
-            start_row = r * cell_size
-            end_row = (r + 1) * cell_size
-            start_col = c * cell_size
-            end_col = (c + 1) * cell_size
-            grouped[r, c] = normalize(image[start_row:end_row, start_col:end_col, :].sum((0, 1)))
+    grouped = np.vstack(parallelize(
+        __extract_row,
+        [range(rows), cols, cell_size, image, d],
+        [True, False, False, False, False],
+        pool
+    ))
     #log_since("Grouped initial image", start_time)
 
     rows, cols, d = grouped.shape
@@ -93,6 +102,18 @@ def extract_features(image, cell_size, window_size):
     return features, positions
 
 
+def __extract_row(args):
+    row, cols, cell_size, image, d = args
+    extracted = np.empty((1, cols, d))
+    for c in xrange(cols):
+        start_row = row * cell_size
+        end_row = (row + 1) * cell_size
+        start_col = c * cell_size
+        end_col = (c + 1) * cell_size
+        extracted[0, c, :] = normalize(image[start_row:end_row, start_col:end_col, :].sum((0, 1)))
+    return extracted
+
+
 def preprocess_image(image, cell_size, num_bins=DEFAULT_BINS):
     """
     Converts the image into a format that is easy to get the hog of.
@@ -104,24 +125,27 @@ def preprocess_image(image, cell_size, num_bins=DEFAULT_BINS):
     @rtype: np.ndarray
     """
     # Normalize the patches within the image
-    # normalized_image = np.empty_like(image)
-    # w, h = image.shape
-    # pre_convolution_cell_size = cell_size + 2
-    # x_range = w // pre_convolution_cell_size
-    # y_range = h // pre_convolution_cell_size
-    # for x in range(x_range):
-    #     for y in range(y_range):
-    #         if x_range - 1 == x:
-    #             end_x = w
-    #         else:
-    #             end_x = x + pre_convolution_cell_size
-    #         if y_range - 1 == y:
-    #             end_y = h
-    #         else:
-    #             end_y = y + pre_convolution_cell_size
-    #
-    #         normalized_image[y:end_y, x:end_x] = normalize(image[y:end_y, x:end_x])
-    # image = normalized_image
+    normalized_image = np.zeros(image.shape)
+    assert isinstance(normalized_image, np.ndarray)
+    h, w = image.shape
+    pre_convolution_cell_size = cell_size
+    x_range = w // pre_convolution_cell_size
+    y_range = h // pre_convolution_cell_size
+    for x in range(x_range):
+        start_x = x * pre_convolution_cell_size
+        for y in range(y_range):
+            start_y = y * pre_convolution_cell_size
+            if x_range - 1 == x:
+                end_x = w
+            else:
+                end_x = start_x + pre_convolution_cell_size
+            if y_range - 1 == y:
+                end_y = h
+            else:
+                end_y = start_y + pre_convolution_cell_size
+
+            normalized_image[start_y:end_y, start_x:end_x] = normalize(image[start_y:end_y, start_x:end_x])
+    image = normalized_image
 
     angles, mags = get_mags_angles(image)
     bins = np.linspace(-np.pi, np.pi, num_bins+1, endpoint=True)
