@@ -1,4 +1,5 @@
 import cProfile
+from itertools import izip
 import pickle
 import glob
 
@@ -12,7 +13,6 @@ except ImportError:
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from patch_extractor import *
 from utils import *
 
 
@@ -21,9 +21,11 @@ FALSE = -1
 
 
 class Cascade(object):
-    def __init__(self, pos_directory, neg_directory, classifiers, thresholds):
+    def __init__(self, pos_directory, neg_directory, classifiers, thresholds, cell_size=6):
         self.pos_directory = pos_directory
         self.neg_directory = neg_directory
+        self.window_shape = None
+        self.cell_size = cell_size
         self.training_features = None
         self.training_labels = None
         self.classifiers = classifiers  # Classifiers in cascade, in order
@@ -36,12 +38,25 @@ class Cascade(object):
         negative_files = glob.glob(self.neg_directory + '*.bmp')
         positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
         negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
+
+        image_shape = positive_images[0].shape
+        for i, im in enumerate(positive_images):
+            if im.shape != image_shape:
+                message = "Not all images have same shape. Image with different shape: %s" % positive_files[i]
+                raise ValueError(message)
+        for i, im in enumerate(negative_images):
+            if im.shape != image_shape:
+                message = "Not all images have same shape. Image with different shape: %s" % negative_files[i]
+                raise ValueError(message)
+        self.window_shape = (image_shape[0] - 2, image_shape[1] - 2)  # Account for convolution
+
+        log("EXTRACTING FEATURES...")
         self.training_features = np.vstack(
-            (utils.extract_features(im)[0] for im in positive_images + negative_images)
+            (utils.extract_features(im, self.cell_size, self.window_shape)[0]
+             for im in positive_images + negative_images)
         )
         self.training_labels = [TRUE] * len(positive_images) + [FALSE] * len(negative_images)
         self.training_labels = np.array(self.training_labels)
-        log("Done loading images")
 
     def generate_cascade(self):
         if self.training_features is None:
@@ -50,20 +65,6 @@ class Cascade(object):
             log("Generating classifier for cascade step %s" % i)
             classifier.fit(self.training_features, self.training_labels)
             log("Training accuracy: %s" % classifier.score(self.training_features, self.training_labels))
-            self.classifiers.append(classifier)
-
-    # def get_new_classifier(self):
-    #     if self.clf_type == 'svm':
-    #         w = {TRUE: 50, FALSE: 1}
-    #         return svm.SVC(kernel='rbf', probability=True, class_weight=w)
-    #     elif self.clf_type == 'random_forest':
-    #         return RandomForestClassifier(n_estimators=200, n_jobs=-1, max_depth=10)
-    #     elif type == 'adaboost':
-    #         return AdaBoostClassifier(DecisionTreeClassifier(max_depth=3),
-    #                                   algorithm="SAMME.R",
-    #                                   n_estimators=200)
-    #     else:
-    #         raise ValueError("Unknown classifier type: %s" % self.clf_type)
 
     def save_cascade(self, name=None):
         log('SAVING...')
@@ -79,11 +80,25 @@ class Cascade(object):
 def main():
     np.seterr(invalid='ignore')
 
-    pos_dir = 'cropped_images/test/'
+    pos_dir = 'cropped_images/*/'
     neg_dir = 'negative_examples/'
 
-    test = Cascade(pos_dir, neg_dir, 'random_forest')
-    test.save_cascade()
+    # estimators = [10, 50, 200]
+    # max_depths = [2, 5, 10]
+    # thresholds = [.1, .3, .5]
+    estimators = [200]
+    max_depths = [10]
+    thresholds = [.5]
+
+    classifiers = [
+        RandomForestClassifier(criterion="entropy", n_jobs=-1, oob_score=True, n_estimators=est, max_depth=d)
+        for est, d in izip(estimators, max_depths)
+    ]
+
+    cascade = Cascade(pos_dir, neg_dir, classifiers, thresholds)
+    cascade.save_cascade()
+
+    print [c.oob_score_ for c in cascade.classifiers]
 
     log("DONE")
 

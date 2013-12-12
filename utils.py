@@ -46,22 +46,33 @@ def extract_hog_features(patch_dicts, images, patch_extractor, num_bins=DEFAULT_
     return features
 
 
-def extract_features(image, cell_size=6, window_size=(38, 30)):
+def extract_features(image, cell_size, window_size):
     """
     @param image: A 2d array representing an image
     @param cell_size: the size of a single cell, must be even
     @return: A feature matrix of shape [num_windows, num_features]
     """
-    image = preprocess_image(image)
-    grouped = do_grouping(image, cell_size)
+    image = preprocess_image(image, cell_size)
+    h, w, d = image.shape
+    rows = h // cell_size
+    cols = w // cell_size
+    grouped = np.empty((rows, cols, d))
+    assert isinstance(grouped, np.ndarray)
+    for r in xrange(rows):
+        for c in xrange(cols):
+            start_row = r * cell_size
+            end_row = (r + 1) * cell_size
+            start_col = c * cell_size
+            end_col = (c + 1) * cell_size
+            grouped[r, c] = normalize(image[start_row:end_row, start_col:end_col, :].sum((0, 1)))
     #log_since("Grouped initial image", start_time)
 
     rows, cols, d = grouped.shape
 
     window_height = window_size[0] // cell_size
     window_width = window_size[1] // cell_size
-    num_cells_wide = cols/2 - (window_width/2 - 1)
-    num_cells_tall = rows/2 - (window_height/2 - 1)
+    num_cells_wide = cols - (window_width - 1)
+    num_cells_tall = rows - (window_height - 1)
 
     num_windows = num_cells_wide * num_cells_tall
     num_features_per_window = window_height * window_width * d
@@ -82,23 +93,7 @@ def extract_features(image, cell_size=6, window_size=(38, 30)):
     return features, positions
 
 
-def do_grouping(image, cell_size, x_offset=0, y_offset=0):
-    h, w, d = image.shape
-    rows = (h - y_offset) // cell_size
-    cols = (w - x_offset) // cell_size
-    grouped = np.empty((rows, cols, d))
-    assert isinstance(grouped, np.ndarray)
-    for r in xrange(rows):
-        for c in xrange(cols):
-            start_row = r * cell_size + y_offset
-            end_row = (r + 1) * cell_size + y_offset
-            start_col = c * cell_size + x_offset
-            end_col = (c + 1) * cell_size + x_offset
-            grouped[r, c] = image[start_row:end_row, start_col:end_col, :].sum((0, 1))
-    return grouped
-
-
-def preprocess_image(image, num_bins=DEFAULT_BINS):
+def preprocess_image(image, cell_size, num_bins=DEFAULT_BINS):
     """
     Converts the image into a format that is easy to get the hog of.
     Basically precomutes which and the magnitude of the contribution for each pixel ahead of time.
@@ -108,6 +103,26 @@ def preprocess_image(image, num_bins=DEFAULT_BINS):
     corresponding bin.
     @rtype: np.ndarray
     """
+    # Normalize the patches within the image
+    # normalized_image = np.empty_like(image)
+    # w, h = image.shape
+    # pre_convolution_cell_size = cell_size + 2
+    # x_range = w // pre_convolution_cell_size
+    # y_range = h // pre_convolution_cell_size
+    # for x in range(x_range):
+    #     for y in range(y_range):
+    #         if x_range - 1 == x:
+    #             end_x = w
+    #         else:
+    #             end_x = x + pre_convolution_cell_size
+    #         if y_range - 1 == y:
+    #             end_y = h
+    #         else:
+    #             end_y = y + pre_convolution_cell_size
+    #
+    #         normalized_image[y:end_y, x:end_x] = normalize(image[y:end_y, x:end_x])
+    # image = normalized_image
+
     angles, mags = get_mags_angles(image)
     bins = np.linspace(-np.pi, np.pi, num_bins+1, endpoint=True)
     bins[-1] += .01  # In case something is exactly the upper bound, want to to catch it with a strict inequality
@@ -129,6 +144,14 @@ def get_mags_angles(image):
     angles = np.arctan2(y_deriv, x_deriv)
     mags = np.sqrt(np.square(x_deriv) + np.square(y_deriv))
     return angles, mags
+
+
+def normalize(array):
+    norm = np.linalg.norm(array.flatten(), 2)
+    if norm != 0:
+        return array / norm
+    else:
+        return array
 
 
 def log(msg, permanent=True):
