@@ -5,8 +5,9 @@ import numpy as np
 from PIL import Image
 from FaceDetector import *
 from generate_cropped_images import get_bounding_boxes
+from utils import *
 
-class Tester(object):
+class TesterSlidingWindow(object):
     def __init__(self, thresholds):
         print "INITIALIZING..."
         cascade = pickle.load(open('cascade.pickle'))
@@ -66,7 +67,10 @@ class Tester(object):
                 if found:
                     gotten_positives += 1
         
-        precision = true_positives/(true_positives+false_positives)
+        if true_positives + false_positives == 0:
+            precision = 0
+        else:
+            precision = true_positives/(true_positives+false_positives)
         recall = gotten_positives/total_positives
         print 'TRUE POSITIVES', true_positives
         print 'FALSE POSITIVES', false_positives
@@ -76,11 +80,61 @@ class Tester(object):
         print 'RECALL', recall
         return precision, recall
 
+class TesterSingleLabel(object):
+    def __init__(self, thresholds):
+        print "INITIALIZING..."
+        cascade = pickle.load(open('cascade_pubfig.pickle'))
+        cascade.thresholds = [thresholds]
+        face_detector = FaceDetector(cascade)
+        face_detector.window_scales = [1]
+        self.classifier = face_detector
+ 
+    def load_data(self, pos_dir, neg_dir):
+        print "LOADING DATA.."
+        #f = open('features_pubfig.pickle', 'r')
+        #self.features = pickle.load(f)
+        #self.pos_features = self.features[:400, :]
+        #self.neg_features = self.features[-400:, :]
+        #f.close()
+        #f = open('labels_pubfig.pickle')
+        #self.labels = pickle.load(f)
+        #self.pos_labels = self.labels[:400]
+        #self.neg_labels = self.labels[-400:]
+        #f.close()
+
+        f = open('features_cmu.pickle', 'r')
+        self.features = pickle.load(f)
+        self.pos_features = self.features[:169]
+        self.neg_features = self.features[169:]
+        f.close()
+        f = open('labels_cmu.pickle', 'r')
+        self.labels = pickle.load(f)
+        self.pos_labels = self.labels[:169]
+        print self.pos_labels
+        self.neg_labels = self.labels[169:]
+        f.close()
+
+    def test(self):
+        print "TESTING..."
+        print 'pos', self.classifier.classifiers[2].score(self.pos_features, self.pos_labels)
+        print 'neg', self.classifier.classifiers[2].score(self.neg_features, self.neg_labels)
+
+
+#tester = TesterSlidingWindow(0.35)
+#tester.load_data('uncropped_images/newtest/')
+#precision, recall = tester.test()
+
 f = open('precision_recall.txt', 'w+')
-for i in range(0, 10):
-    thresh = i/10.
-    tester = Tester(thresh)
+for i in range(0, 20):
+    thresh = i/20.
+    tester = TesterSlidingWindow(thresh)
     tester.load_data('uncropped_images/newtest/')
     precision, recall = tester.test()
     f.write('thresh: {0}, precision: {1}, recall: {2}\n'.format(thresh, precision, recall))
 f.close()
+
+#tester = TesterSingleLabel([0.5])
+#pos_dir = '/Users/jsha/data/cropped_pubfig/'
+#neg_dir = '/Users/jsha/data/negative_examples_pubfig/'
+#tester.load_data(pos_dir, neg_dir)
+#tester.test()
