@@ -14,11 +14,11 @@ if not hasattr(ImageDraw.Image, "isNumberType"):
         return isinstance(obj, numbers.Number)
     ImageDraw.Image.isNumberType = isNumberType
 
-
 def get_bounding_boxes(ground_truth_file_name):
     ground_truths_file = open(ground_truth_file_name)
     indent_amount = "    "
     current_folder = None
+    parsed_list = list_parse(ground_truths_file)
     bounding_boxes = defaultdict(list)  # Stores a list of tuples of (minx, miny, maxx, maxy)
     for line in ground_truths_file:
         line = line[:-1]  # get rid of trailing newline
@@ -108,6 +108,18 @@ def get_bounding_boxes(ground_truth_file_name):
             current_folder = line
     return bounding_boxes
 
+def get_pubfig_bounding_box(file_handle):
+    parsed_list = list_parse(file_handle)
+    bounding_boxes = defaultdict(list)
+    for tup in parsed_list:
+        bounding_boxes[tup[4] + '.jpg'] = [tuple([int(x) for x in tup[3].split(',')])]
+    return bounding_boxes
+
+def list_parse(file_handle):
+    for line in file_handle:
+        if line.startswith('#'): continue
+        yield line.strip().split('\t')
+    
 
 def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, target_height, target_width):
     # For each bounding box, crop image and save to corresponding location in output dir
@@ -119,7 +131,12 @@ def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, t
         full_input_name = os.path.join(src_folder, file_name)
         without_extension = os.path.extsep.join(file_name.split(os.path.extsep)[:-1])
         output_name_template = os.path.join(dst_folder, without_extension + "_%s" + os.path.extsep + "bmp")
-        orig_image = Image.open(full_input_name)
+        orig_image = None
+        try:
+            orig_image = Image.open(full_input_name)
+        except IOError:
+            print 'Oh dear.'
+            continue
         for i, (left, top, right, bottom) in enumerate(boxes):
             full_output_name = output_name_template % i
             cropped = orig_image.crop((left, top, right, bottom)).copy()
@@ -169,6 +186,11 @@ def extract_negative_patches(src_dir, dst_dir, bounding_boxes, patch_height, pat
         os.makedirs(dst_dir)
     for file_name, boxes in bounding_boxes.iteritems():
         full_input_name = os.path.join(src_dir, file_name)
+        try:
+            orig_image = Image.open(full_input_name)
+        except IOError:
+            print 'Oh dear.'
+            continue
         orig_image = Image.open(full_input_name)
         width, height = orig_image.size
         num_patches_wide = width / patch_width
@@ -243,15 +265,16 @@ def show_size_stats(bounding_boxes, target_aspect_ratio):
 
 
 def main():
-    src_folder = "uncropped_images"
-    faces_dst_folder = "cropped_images"
-    negatives_dst_folder = "negative_examples"
-    bounding_boxes = get_bounding_boxes("ground_truth.txt")
+#    src_folder = "uncropped_images"
+    src_folder = "../getpubfig/dev"
+    faces_dst_folder = "cropped_pubfig"
+    negatives_dst_folder = "negative_examples_pubfig"
+    bounding_boxes = get_pubfig_bounding_box(open("../getpubfig/dev_urls.txt"))
     #show_aspect_ratio_stats(bounding_boxes)
     #show_size_stats(bounding_boxes, 1.25)
     cropped_height = 40
     cropped_width = 32
-    #extract_faces(src_folder, faces_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
+#    extract_faces(src_folder, faces_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
     extract_negative_patches(src_folder, negatives_dst_folder, bounding_boxes, cropped_height, cropped_width)
 
 
