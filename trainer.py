@@ -1,4 +1,5 @@
 import cProfile
+from itertools import izip
 import pickle
 import glob
 
@@ -12,7 +13,6 @@ except ImportError:
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.tree import DecisionTreeClassifier
 
-from patch_extractor import *
 from utils import *
 
 
@@ -21,76 +21,61 @@ FALSE = -1
 
 
 class Cascade(object):
-    def __init__(self, pos_directory, neg_directory, clf_type='svm'):
-        self.clf_type = clf_type
-        self.pos_directory = pos_directory
-        self.neg_directory = neg_directory
+    def __init__(self, pos_directories, neg_directories, classifiers, thresholds, cell_size=6):
+        self.pos_directories = pos_directories
+        self.neg_directories = neg_directories
+        self.window_shape = None
+        self.cell_size = cell_size
         self.training_features = None
         self.training_labels = None
-        self.load_data()
-        self.classifiers = {}  # Maps patch size to a classifier
+        self.classifiers = classifiers  # Classifiers in cascade, in order
+        self.thresholds = thresholds  # Thresholds for the classifiers
+        self.generate_cascade()
 
     def load_data(self):
         log("LOADING IMAGES...")
-        positive_files = glob.glob(self.pos_directory + '*.bmp')
-        negative_files = glob.glob(self.neg_directory + '*.bmp')
+        positive_files = []
+        negative_files = []
+        for pos_dir in self.pos_directories:
+            positive_files += glob.glob(pos_dir + '*.bmp')
+        for neg_dir in self.neg_directories:
+            negative_files = glob.glob(neg_dir + '*.bmp')
         positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
         negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
+
+        image_shape = positive_images[0].shape
+        for i, im in enumerate(positive_images):
+            if im.shape != image_shape:
+                message = "Not all images have same shape. Image with different shape: %s" % positive_files[i]
+                raise ValueError(message)
+        for i, im in enumerate(negative_images):
+            if im.shape != image_shape:
+                message = "Not all images have same shape. Image with different shape: %s" % negative_files[i]
+                raise ValueError(message)
+        self.window_shape = (image_shape[0] - 2, image_shape[1] - 2)  # Account for convolution
+
+        log("EXTRACTING FEATURES...")
         self.training_features = np.vstack(
-            (utils.get_feature_matrix_from_image(im)[0] for im in positive_images + negative_images)
+            (utils.extract_features(im, self.cell_size, self.window_shape)[0]
+             for im in positive_images + negative_images)
         )
         self.training_labels = [TRUE] * len(positive_images) + [FALSE] * len(negative_images)
         self.training_labels = np.array(self.training_labels)
-        log("Done loading images")
 
-    def generate_cascade(self, patch_sizes):
+    def generate_cascade(self):
         if self.training_features is None:
             self.load_data()
-        #pool = multiprocessing.Pool(NUM_THREADS)
-        for size in patch_sizes:
-            log("Generating cascade for patch size %s" % size)
-            self.add_classifier_for_patch_size(size)
-        #pool.close()
-
-    def add_classifier_for_patch_size(self, patch_size):
-        log("TRAINING...", False)
-        classifier = self.get_new_classifier()
-        classifier.fit(self.training_features, self.training_labels)
-        print "\nTraining accuracy", classifier.score(self.training_features, self.training_labels)
-        correct_examples = self.training_labels == TRUE
-        correct_features = self.training_features[correct_examples]
-        correct_labels = self.training_labels[correct_examples]
-        print "Training accuracy for positive examples", classifier.score(correct_features, correct_labels)
-        #log("Training accuracy: %s" % classifier.score(training_features, training_labels))
-        self.classifiers[patch_size] = classifier
-
-    def get_new_classifier(self):
-        if self.clf_type == 'svm':
-            w = {TRUE: 50, FALSE: 1}
-            return svm.SVC(kernel='rbf', probability=True, class_weight=w)
-        elif self.clf_type == 'random_forest':
-            return RandomForestClassifier(n_estimators=200, n_jobs=-1, max_depth=10)
-        elif type == 'adaboost':
-            return AdaBoostClassifier(DecisionTreeClassifier(max_depth=3),
-                                      algorithm="SAMME.R",
-                                      n_estimators=200)
-        else:
-            raise ValueError("Unknown classifier type: %s" % self.clf_type)
-
-    def get_classifiers_and_sizes(self):
-        # Sort by patch size decreasing
-        clfs_and_sizes = sorted(self.classifiers.iteritems(), key=lambda x: x[0], reverse=True)
-        # Unzip to return a list of classifiers and a list of patch sizes
-        sizes, classifiers = zip(*clfs_and_sizes)
-        # Swap the order
-        return classifiers, sizes
+        for i, classifier in enumerate(self.classifiers):
+            log("Generating classifier for cascade step %s" % i)
+            classifier.fit(self.training_features, self.training_labels)
+            log("Training accuracy: %s" % classifier.score(self.training_features, self.training_labels))
 
     def save_cascade(self, name=None):
         log('SAVING...')
         self.training_features = None
         self.training_labels = None
         if name is None:
-            name = 'cascade_{0}.pickle'.format(self.clf_type)
+            name = "cascade.pickle"
         f = open(name, 'w+')
         pickle.dump(self, f)
         f.close()
@@ -99,19 +84,26 @@ class Cascade(object):
 def main():
     np.seterr(invalid='ignore')
 
-    pos_dir = 'cropped_images/test/'
-    neg_dir = 'negative_examples/'
+    pos_dir = ['cropped_images/test/', 'cropped_images/test-low']
+    neg_dir = ['negative_examples/']
 
-    #test = Cascade(pos_dir, neg_dir, 'svm')
-    test = Cascade(pos_dir, neg_dir, 'random_forest')
-    #test = Cascade(pos_dir, neg_dir, 'adaboost')
+    estimators = [10, 50, 200]
+    max_depths = [2, 3, 4]
+    thresholds = [.1, .1, .3]
+    # estimators = [200]
+    # max_depths = [10]
+    # thresholds = [.5]
 
-    #test.generate_cascade([30, 25, 20, 15, 10, 5])
-    #test.generate_cascade([20, 15, 10, 5])
-    #test.generate_cascade([20, 15, 10])
-    test.generate_cascade([5])
+    classifiers = [
+        RandomForestClassifier(criterion="entropy", n_jobs=-1, oob_score=True, n_estimators=est, max_depth=d)
+        for est, d in izip(estimators, max_depths)
+    ]
 
-    test.save_cascade()
+    cascade = Cascade(pos_dir, neg_dir, classifiers, thresholds)
+    cascade.save_cascade()
+
+    log("Out-of-bag error for each classifier: %s" % [c.oob_score_ for c in cascade.classifiers])
+
     log("DONE")
 
 
