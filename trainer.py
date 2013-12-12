@@ -21,9 +21,9 @@ FALSE = -1
 
 
 class Cascade(object):
-    def __init__(self, pos_directory, neg_directory, classifiers, thresholds, cell_size=6):
-        self.pos_directory = pos_directory
-        self.neg_directory = neg_directory
+    def __init__(self, pos_directories, neg_directories, classifiers, thresholds, cell_size=6):
+        self.pos_directories = pos_directories
+        self.neg_directories = neg_directories
         self.window_shape = None
         self.cell_size = cell_size
         self.training_features = None
@@ -34,8 +34,12 @@ class Cascade(object):
 
     def load_data(self):
         log("LOADING IMAGES...")
-        positive_files = glob.glob(self.pos_directory + '*.bmp')
-        negative_files = glob.glob(self.neg_directory + '*.bmp')
+        positive_files = []
+        negative_files = []
+        for pos_dir in self.pos_directories:
+            positive_files += glob.glob(pos_dir + '*.bmp')
+        for neg_dir in self.neg_directories:
+            negative_files = glob.glob(neg_dir + '*.bmp')
         positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
         negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
 
@@ -80,15 +84,15 @@ class Cascade(object):
 def main():
     np.seterr(invalid='ignore')
 
-    pos_dir = 'cropped_images/*/'
-    neg_dir = 'negative_examples/'
+    pos_dir = ['cropped_images/test/', 'cropped_images/test-low']
+    neg_dir = ['negative_examples/']
 
-    # estimators = [10, 50, 200]
-    # max_depths = [2, 5, 10]
-    # thresholds = [.1, .3, .5]
-    estimators = [200]
-    max_depths = [10]
-    thresholds = [.5]
+    estimators = [10, 50, 200]
+    max_depths = [3, 4, 5]
+    thresholds = [.1, .1, .3]
+    # estimators = [200]
+    # max_depths = [10]
+    # thresholds = [.5]
 
     classifiers = [
         RandomForestClassifier(criterion="entropy", n_jobs=-1, oob_score=True, n_estimators=est, max_depth=d)
@@ -98,7 +102,7 @@ def main():
     cascade = Cascade(pos_dir, neg_dir, classifiers, thresholds)
     cascade.save_cascade()
 
-    print [c.oob_score_ for c in cascade.classifiers]
+    log("Out-of-bag error for each classifier: %s" % [c.oob_score_ for c in cascade.classifiers])
 
     log("DONE")
 

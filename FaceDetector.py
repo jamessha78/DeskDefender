@@ -36,6 +36,7 @@ class FaceDetector:
         # self.scales = [1, .5, .25]
 
         self.positions = None
+        self.likelihoods = None
         self.best_position = None
 
     def test(self, im):
@@ -76,6 +77,7 @@ class FaceDetector:
             all_features = all_features[meets_threshold]
 
         self.positions = all_positions
+        self.likelihoods = output_probs
         if self.positions.shape[0] > 0:
             best_activation = np.argmax(output_probs)
             self.best_position = self.positions[best_activation, :].tolist()
@@ -92,8 +94,23 @@ class FaceDetector:
     def draw(self, im):
         im = im.convert("RGB")
         draw = ImageDraw.Draw(im)
-        if self.positions is not None:
-            for top, left, bottom, right in self.positions:
+        if self.positions is not None and self.likelihoods is not None:
+            pairs = izip(self.likelihoods, self.positions)
+            sorted_pairs = sorted(pairs, key=lambda x: x[0])
+            min_likelihood = np.min(self.likelihoods)
+            max_likelihood = np.max(self.likelihoods)
+            utils.log("Minimum displayed likelihood (blue): %s" % min_likelihood)
+            utils.log("Maximum displayed likelihood (green): %s" % max_likelihood)
+            for likelihood, (top, left, bottom, right) in sorted_pairs:
+                # Color ranges from blue (not very likely match) to green (very likely match)
+                normalized_likelihood = (likelihood - min_likelihood) / (max_likelihood - min_likelihood)
+                blue = hex(int((1 - normalized_likelihood) * 255))[2:]
+                green = hex(int(normalized_likelihood * 255))[2:]
+                if len(blue) == 1:
+                    blue = "0" + blue
+                if len(green) == 1:
+                    green = "0" + green
+                color = "#00%s%s" % (green, blue)
                 draw.polygon(
                     [
                         (left, top),
@@ -101,7 +118,7 @@ class FaceDetector:
                         (right, bottom),
                         (left, bottom)
                     ],
-                    outline="#0f0"
+                    outline=color,
                 )
         if self.best_position is not None:
             top, left, bottom, right = self.best_position
@@ -128,14 +145,14 @@ def main():
 
     cascade = pickle.load(open('cascade.pickle'))
     # cascade.classifiers = [cascade.classifiers[2]]
-    cascade.thresholds = [.3]
+    cascade.thresholds = [.2]
 
-    # im = Image.open('test.png').convert('L')
+    im = Image.open('test.png').convert('L')
     # im = Image.open('uncropped_images/newtest/police.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
-    im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
+    # im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
     #im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')
     width, height = im.size
 
