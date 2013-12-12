@@ -1,5 +1,5 @@
 import cProfile
-from joblib.parallel import multiprocessing
+import multiprocessing
 import time
 import utils
 import numpy as np
@@ -94,7 +94,7 @@ class FaceDetector:
     def draw(self, im):
         im = im.convert("RGB")
         draw = ImageDraw.Draw(im)
-        if self.positions is not None and self.likelihoods is not None and len(self.likelihoods) > 0:
+        if self.positions is not None and self.likelihoods is not None and len(self.likelihoods) > 1:
             pairs = izip(self.likelihoods, self.positions)
             sorted_pairs = sorted(pairs, key=lambda x: x[0])
             min_likelihood = np.min(self.likelihoods)
@@ -103,7 +103,8 @@ class FaceDetector:
             utils.log("Maximum displayed likelihood (green): %s" % max_likelihood)
             for likelihood, (top, left, bottom, right) in sorted_pairs:
                 # Color ranges from blue (not very likely match) to green (very likely match)
-                normalized_likelihood = (likelihood - min_likelihood) / (max_likelihood - min_likelihood)
+                likelihood_range = max_likelihood - min_likelihood
+                normalized_likelihood = (likelihood - min_likelihood) / (1 if likelihood_range == 0 else likelihood_range)
                 blue = hex(int((1 - normalized_likelihood) * 255))[2:]
                 green = hex(int(normalized_likelihood * 255))[2:]
                 if len(blue) == 1:
@@ -145,15 +146,15 @@ def main():
 
     cascade = pickle.load(open('cascade.pickle'))
     # cascade.classifiers = [cascade.classifiers[2]]
-    cascade.thresholds = [.2]
+    cascade.thresholds = [0.3, 0.45, .6]
 
-    im = Image.open('test.png').convert('L')
+    # im = Image.open('../getpubfig/dev/0be4da399ee374d95962a345c1f3c260.jpg').convert('L')
     # im = Image.open('uncropped_images/newtest/police.gif').convert('L')
-    # im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
-    #im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
-    #im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
+    im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
+    # im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
+    # im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
-    #im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')
+    # im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')
     width, height = im.size
 
     face_detector = FaceDetector(cascade, (height, width))

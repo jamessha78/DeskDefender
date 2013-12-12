@@ -37,9 +37,9 @@ class Cascade(object):
         positive_files = []
         negative_files = []
         for pos_dir in self.pos_directories:
-            positive_files += glob.glob(pos_dir + '*.bmp')
+            positive_files += glob.glob(pos_dir + '*')
         for neg_dir in self.neg_directories:
-            negative_files = glob.glob(neg_dir + '*.bmp')
+            negative_files = glob.glob(neg_dir + '*')
         positive_images = [np.array(Image.open(x).convert('L')) for x in positive_files]
         negative_images = [np.array(Image.open(x).convert('L')) for x in negative_files]
 
@@ -61,7 +61,9 @@ class Cascade(object):
         )
         self.training_labels = [TRUE] * len(positive_images) + [FALSE] * len(negative_images)
         self.training_labels = np.array(self.training_labels)
-
+        pickle.dump(self.training_features, open('cropped_training.pickle', 'w+'))
+        pickle.dump(self.training_labels, open('negative_training.pickle', 'w+'))
+        asdf
     def generate_cascade(self):
         if self.training_features is None:
             self.load_data()
@@ -84,8 +86,8 @@ class Cascade(object):
 def main():
     np.seterr(invalid='ignore')
 
-    pos_dir = ['cropped_images/test/', 'cropped_images/test-low']
-    neg_dir = ['negative_examples/']
+    pos_dir = ['cropped_images/newtest/'] # , 'cropped_images/test-low/']
+    neg_dir = ['negative_examples/'] # ['negative_examples_pubfig/', 'negative_examples/']
 
     estimators = [10, 50, 200]
     max_depths = [2, 3, 4]

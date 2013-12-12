@@ -1,3 +1,4 @@
+from random import shuffle
 import Image
 import ImageDraw
 from collections import defaultdict
@@ -179,24 +180,30 @@ def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, t
             final.save(full_output_name)
 
 
-def extract_negative_patches(src_dir, dst_dir, bounding_boxes, patch_height, patch_width):
+def extract_negative_patches(src_dir, dst_dir, bounding_boxes, target_aspect_ratio, target_height, target_width):
     current_patch = 0
     patch_file_template = os.path.join(dst_dir, "negative_%s.bmp")
     if not os.path.exists(dst_dir):
         os.makedirs(dst_dir)
     for file_name, boxes in bounding_boxes.iteritems():
+        patch_width = boxes[0][2] - boxes[0][0]
+        patch_height = boxes[0][3] - boxes[0][1]
         full_input_name = os.path.join(src_dir, file_name)
         try:
             orig_image = Image.open(full_input_name)
         except IOError:
-            print 'Oh dear.'
+#            print 'Oh dear.'
             continue
         orig_image = Image.open(full_input_name)
         width, height = orig_image.size
-        num_patches_wide = width / patch_width
-        num_patches_tall = height / patch_height
-        for x in range(num_patches_wide):
-            for y in range(num_patches_tall):
+        num_patches_wide = int(round(width / float(patch_width)))
+        num_patches_tall = int(round(height / float(patch_height)))
+        rand_x = range(num_patches_wide)
+        shuffle(rand_x)
+        rand_y = range(num_patches_wide)
+        shuffle(rand_y)
+        for x in rand_x[:min(3, len(rand_x))]:
+            for y in rand_y[:min(3, len(rand_y))]:
                 patch_left = x*patch_width
                 patch_right = patch_left + patch_width
                 patch_top = y*patch_height
@@ -208,9 +215,46 @@ def extract_negative_patches(src_dir, dst_dir, bounding_boxes, patch_height, pat
                         # Overlaps with a face's bounding box
                         can_use_patch = False
                 if not can_use_patch:
+#                    print 'cant use'
                     continue
                 full_output_file_name = patch_file_template % current_patch
-                orig_image.crop((patch_left, patch_top, patch_right, patch_bottom)).save(full_output_file_name)
+                cropped = orig_image.crop((patch_left, patch_top, patch_right, patch_bottom))
+                width = patch_width
+                height = patch_height
+                other_height = width * target_aspect_ratio
+                scale_to_height = height < other_height
+                if scale_to_height:
+                    scale_factor = target_height / float(height)
+                    new_width = int(width * scale_factor)
+                    cropped.thumbnail((new_width, target_height), Image.ANTIALIAS)  # Modifies image
+
+                    # Crop to correct aspect ratio
+                    half_width_diff = int((new_width - target_width) / 2)
+                    new_left = half_width_diff
+                    new_right = new_width - half_width_diff
+                    if new_right - new_left > target_width:
+                        if new_right - new_left - target_width != 1:
+                            print "More than one left over width pixel!!!"  # This should never happen
+                        # To account for a fractional (eg .5) half_width_diff
+                        new_right -= new_right - new_left - target_width
+                    final = cropped.crop((new_left, 0, new_right, target_height))
+                else:
+                    # Change width
+                    scale_factor = target_width / float(width)
+                    new_height = int(height * scale_factor)
+                    cropped.thumbnail((target_width, new_height), Image.ANTIALIAS)  # Modifies image
+
+                    # Crop to correct aspect ratio
+                    half_height_diff = int((new_height - target_height) / 2)
+                    new_top = half_height_diff
+                    new_botom = new_height - half_height_diff
+                    if new_botom - new_top > target_height:
+                        if new_botom - new_top - target_height != 1:
+                            print "More than one left over height pixel!!!"  # This should never happen
+                        # To account for a fractional (eg .5) half_height_diff
+                        new_top += new_botom - new_top - target_height
+                    final = cropped.crop((0, new_top, target_width, new_botom))
+                final.save(full_output_file_name)
                 current_patch += 1
 
 
@@ -268,14 +312,14 @@ def main():
 #    src_folder = "uncropped_images"
     src_folder = "../getpubfig/dev"
     faces_dst_folder = "cropped_pubfig"
-    negatives_dst_folder = "negative_examples_pubfig"
+    negatives_dst_folder = "negative_examples_pubfig_scaled"
     bounding_boxes = get_pubfig_bounding_box(open("../getpubfig/dev_urls.txt"))
     #show_aspect_ratio_stats(bounding_boxes)
     #show_size_stats(bounding_boxes, 1.25)
     cropped_height = 40
     cropped_width = 32
 #    extract_faces(src_folder, faces_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
-    extract_negative_patches(src_folder, negatives_dst_folder, bounding_boxes, cropped_height, cropped_width)
+    extract_negative_patches(src_folder, negatives_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
 
 
 if __name__ == "__main__":
