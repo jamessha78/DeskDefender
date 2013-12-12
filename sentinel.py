@@ -2,11 +2,50 @@ import cv2
 import time
 import freenect
 import curses
+import random
+import threading
+import pyglet
 import numpy as np
 from PIL import Image
 
 from launcher import *
 
+threads = []
+
+def exit_callback(dt):
+    pyglet.app.exit() 
+
+def play_audio(audio_type):
+    if audio_type == 'fire':
+        s = pyglet.media.load('audio/firing.mp3')
+    elif audio_type == 'acquired person':
+        s = pyglet.media.load('audio/there you are.mp3')
+    elif audio_type == 'lost person':
+        s = pyglet.media.load('audio/target lost.mp3')
+    elif audio_type == 'searching':
+        rand = random.random()
+        if rand > 0.5:
+            s = pyglet.media.load('audio/searching.mp3')
+        else:
+            s = pyglet.media.load('audio/are you still there.mp3')
+    elif audio_type == 'shutdown':
+        rand = random.random()
+        if rand > 0.5:
+            s = pyglet.media.load('audio/shutting down.mp3')
+        else:
+            s = pyglet.media.load('audio/goodnight.mp3')
+    else:
+        return
+    s.play()
+    pyglet.clock.schedule_once(exit_callback, s.duration)
+    pyglet.app.run()
+    s.delete()
+    return
+
+#def play_audio(audio_type):
+#    t = threading.Thread(target=play_audio_subfunc, args = (audio_type,))
+#    t.start()
+   
 class Sentinel(object):
     def __init__(self):
         #haar_path = '/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml'
@@ -14,12 +53,12 @@ class Sentinel(object):
         self.detector = cv2.CascadeClassifier(haar_path)
 
         print 'ZEROING LAUNCHER...'
-        self.launcher = Launcher()
-        # zero the launcher
-        self.launcher.run_command('down', 1000)
-        self.launcher.run_command('left', 6000)
-        self.launcher.run_command('right', 3000)
-        self.launcher.run_command('up', 500)
+        #self.launcher = Launcher()
+        ## zero the launcher
+        #self.launcher.run_command('down', 1000)
+        #self.launcher.run_command('left', 6000)
+        #self.launcher.run_command('right', 3000)
+        #self.launcher.run_command('up', 500)
  
         print 'DONE'
         self.fx = 540
@@ -33,22 +72,34 @@ class Sentinel(object):
 
     def display_face(self, face, image):
         # Faces -> [(x, y, w, h)]
+        tmp = image.copy()
+        tmp[:, :, 0] = 0
+        tmp[:, :, 1] = 0
+        tmp[:, :, 2] = image[:, :, 0]
         x, y, w, h = face
-        cv2.rectangle(image, (x,y), (x+w,y+h), (255, 0, 0), 2)
+        cv2.rectangle(tmp, (x,y), (x+w,y+h), (255, 255, 255), 2)
 
-        cv2.imshow('test', image)
+        cv2.imshow('test', tmp)
         cv2.waitKey(10)
 
     def display_faces(self, faces, image):
         # Faces -> [(x, y, w, h)]
+        tmp = image.copy()
+        tmp[:, :, 0] = 0
+        tmp[:, :, 1] = 0
+        tmp[:, :, 2] = image[:, :, 0]
         for (x, y, w, h) in faces:
-            cv2.rectangle(image, (x,y), (x+w,y+h), (255, 0, 0), 2)
+            cv2.rectangle(tmp, (x,y), (x+w,y+h), (0, 0, 255), 2)
 
-        cv2.imshow('test', image)
+        cv2.imshow('test', tmp)
         cv2.waitKey(10)
 
     def display_image(self, image):
-        cv2.imshow('test', image)
+        tmp = image.copy()
+        tmp[:, :, 0] = 0
+        tmp[:, :, 1] = 0
+        tmp[:, :, 2] = image[:, :, 0]
+        cv2.imshow('test', tmp)
         cv2.waitKey(10)
 
     def get_faces(self, image):
@@ -125,17 +176,17 @@ class Sentinel(object):
         ud_theta_2 = np.arcsin(prev_face_loc[1]/prev_face_loc[2])
         ud_value = int((ud_theta_1 - ud_theta_2)*180/np.pi*1000/30)
         
-        if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
-            if abs(lr_value) > 10: # noise in the measurements
-                if lr_value < 0 and face[1]+face[3] < 640:
-                    self.launcher.run_command('left', -lr_value)
-                elif lr_value > 0 and face[1] > 0:
-                    self.launcher.run_command('right', lr_value)
-            if abs(ud_value) > 10: # noise in the measurements
-                if ud_value < 0 and face[0]+face[2] < 480:
-                    self.launcher.run_command('up', -ud_value)
-                elif ud_value > 0 and face[0] > 0:
-                    self.launcher.run_command('down', ud_value)
+        #if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
+        #    if abs(lr_value) > 10: # noise in the measurements
+        #        if lr_value < 0 and face[1]+face[3] < 640:
+        #            self.launcher.run_command('left', -lr_value)
+        #        elif lr_value > 0 and face[1] > 0:
+        #            self.launcher.run_command('right', lr_value)
+        #    if abs(ud_value) > 10: # noise in the measurements
+        #        if ud_value < 0 and face[0]+face[2] < 480:
+        #            self.launcher.run_command('up', -ud_value)
+        #        elif ud_value > 0 and face[0] > 0:
+        #            self.launcher.run_command('down', ud_value)
         
         face_center = face_centers[best_face_idx]
         log_f.write('{0}, {1}\n'.format(face_center[0], face_center[1]))
@@ -152,7 +203,8 @@ class Sentinel(object):
         print 'TRACKING...'
         faces = ()
         prev_face_loc = (1e-10, 1e-10, 20) # start pointing at origin
-        ticker = 0
+        nondetection_duration = 120
+        detection_duration = 0
         f = open('log.txt', 'w+')
         while True:
             win.clear()
@@ -163,26 +215,39 @@ class Sentinel(object):
             except: # in no delay mode getkey raise and exeption if no key is press 
                 key = None
             if key == "q": # exit on 'q'
+                play_audio('shutdown')
                 break
             if key == " ": # fire on space
+                play_audio('fire')
                 self.launcher.run_command('fire', 1)
             
-            image = freenect.sync_get_video()[0]
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            image_col = freenect.sync_get_video()[0]
+            image = cv2.cvtColor(image_col, cv2.COLOR_BGR2GRAY)
             depth_map = freenect.sync_get_depth()[0]*self.depth_constant
             
             faces = self.get_faces(image)
            
             if faces != ():
-                ticker = 0
-            if faces == () and ticker < 30 and prev_face_loc != (1e-10, 1e-10, 20): # fall back to depth tracking
+                if nondetection_duration > 30 and detection_duration > 2:
+                    play_audio('acquired person')
+                    nondetection_duration = 0
+                detection_duration += 1
+            elif faces == () and nondetection_duration < 60 and prev_face_loc != (1e-10, 1e-10, 20): # fall back to depth tracking
                 faces = [self.update_face(prev_face_loc, depth_map)]
-                ticker += 1
                 if faces == (): # this can fail too
-                    ticker = 30
+                    nondetection_duration = 60
+                detection_duration = 0
+                nondetection_duration += 1
+            elif nondetection_duration == 60:
+                detection_duration = 0
+                play_audio('lost person')
+                nondetection_duration += 1
+            elif nondetection_duration > 60 and nondetection_duration%120 == 0:
+                play_audio('searching')
+                nondetection_duration += 1
 
             if faces == () or faces == ["Wrong"]:
-                self.display_image(image)
+                self.display_image(image_col)
                 continue
             face_centers = [(x[0]+x[2]/2, x[1]+x[3]/2) for x in faces]
             face_depths = self.get_face_depths(faces, depth_map)
@@ -192,7 +257,7 @@ class Sentinel(object):
                 continue
 
             idx = self.aim_follow(faces, face_centers, face_depths, prev_face_loc, f)
-            self.display_face(faces[idx], image)
+            self.display_face(faces[idx], image_col)
             
             face = faces[idx]
             if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
