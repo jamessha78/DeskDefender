@@ -56,15 +56,7 @@ def parallelize(function, args, should_map_over_arg, pool=None):
 
     return rtn
 
-
-def extract_features(image, cell_size, window_size, pool=None):
-    """
-    @param image: A 2d array representing an image
-    @param cell_size: the size of a single cell, must be even
-    @return: A feature matrix of shape [num_windows, num_features]
-    """
-# def __extract_row(image, cell_size, window_size):
-    image = preprocess_image(image, cell_size)
+def image_to_features(image, cell_size, window_size, pool=None):
     h, w, d = image.shape
     rows = h // cell_size
     cols = w // cell_size
@@ -82,6 +74,9 @@ def extract_features(image, cell_size, window_size, pool=None):
     window_width = window_size[1] // cell_size
     num_cells_wide = cols - (window_width - 1)
     num_cells_tall = rows - (window_height - 1)
+
+    if num_cells_wide < 0 or num_cells_tall < 0:
+        return None, None
 
     num_windows = num_cells_wide * num_cells_tall
     num_features_per_window = window_height * window_width * d
@@ -101,6 +96,30 @@ def extract_features(image, cell_size, window_size, pool=None):
     #log_since("Done with feature extraction", start_time)
     return features, positions
 
+def extract_features(image, cell_size, window_size, pool=None):
+    """
+    @param image: A 2d array representing an image
+    @param cell_size: the size of a single cell, must be even
+    @return: A feature matrix of shape [num_windows, num_features]
+    """
+# def __extract_row(image, cell_size, window_size):
+    image_base = preprocess_image(image, cell_size)
+    image_overlap_ud = preprocess_image(image[cell_size//2:, :], cell_size)
+    image_overlap_lr = preprocess_image(image[:, cell_size//2:], cell_size)
+    image_overlap_udlr = preprocess_image(image[cell_size//2:, cell_size//2:], cell_size)
+    images = [image_base, image_overlap_ud, image_overlap_lr, image_overlap_udlr]
+    to_concat_features = []
+    to_concat_positions = []
+    for image in images:
+        features, positions = image_to_features(image, cell_size, window_size, pool)
+        if features != None:
+            to_concat_features.append(features)
+            to_concat_positions.append(positions)
+    if to_concat_features == []:
+        return None, None
+    features = np.vstack(to_concat_features)
+    positions = np.vstack(to_concat_positions)
+    return features, positions
 
 def __extract_row(args):
     row, cols, cell_size, image, d = args
@@ -110,7 +129,7 @@ def __extract_row(args):
         end_row = (row + 1) * cell_size
         start_col = c * cell_size
         end_col = (c + 1) * cell_size
-        extracted[0, c, :] = normalize(image[start_row:end_row, start_col:end_col, :].sum((0, 1)))
+        extracted[0, c, :] = normalize_l1(image[start_row:end_row, start_col:end_col, :].sum((0, 1)))
     return extracted
 
 
@@ -177,6 +196,12 @@ def normalize(array):
     else:
         return array
 
+def normalize_l1(array):
+    norm = np.linalg.norm(array.flatten(), 1)
+    if norm != 0:
+        return array / norm
+    else:
+        return array
 
 def log(msg, permanent=True):
     time_stamp = time.asctime()
