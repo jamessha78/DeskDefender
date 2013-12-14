@@ -82,7 +82,8 @@ def extract_features(image, cell_size, window_size, pool=None):
     window_width = window_size[1] // cell_size
     num_cells_wide = cols - (window_width - 1)
     num_cells_tall = rows - (window_height - 1)
-
+    if num_cells_wide < 0 or num_cells_tall < 0:
+        return (None, None)
     num_windows = num_cells_wide * num_cells_tall
     num_features_per_window = window_height * window_width * d
     features = np.empty((num_windows, num_features_per_window))

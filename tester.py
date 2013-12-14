@@ -11,7 +11,7 @@ class Tester(object):
         print "INITIALIZING..."
         cascade = pickle.load(open('cascade.pickle'))
         cascade.thresholds = [thresholds]
-        face_detector = FaceDetector(cascade)
+        face_detector = FaceDetector(cascade, (100, 200))
         self.classifier = face_detector
  
     def load_data(self, dir):
@@ -22,7 +22,11 @@ class Tester(object):
         for file in file_list:
             # hacks to remove 'uncropped_images' from image name
             gt_key = file[17:]
-            img = np.array(Image.open(file).convert('L'))
+            img = Image.open(file).convert('L')
+            width, height = img.size
+            target_width = float(100)
+            img = ndimage.interpolation.zoom(img, target_width/width)
+
             self.test_images[gt_key] = img
 
     def test(self):
@@ -82,5 +86,7 @@ for i in range(0, 10):
     tester = Tester(thresh)
     tester.load_data('uncropped_images/newtest/')
     precision, recall = tester.test()
+    print i
+    print precision, recall
     f.write('thresh: {0}, precision: {1}, recall: {2}\n'.format(thresh, precision, recall))
 f.close()

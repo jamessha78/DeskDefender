@@ -1,3 +1,4 @@
+import os
 import cProfile
 import multiprocessing
 import time
@@ -9,6 +10,7 @@ from PIL import ImageDraw
 
 from patch_extractor import *
 from sliding_window import *
+import sys
 
 class FaceDetector:
     
@@ -29,9 +31,15 @@ class FaceDetector:
             scale_delta = (1 - min_scale) / float(num_window_sizes - 1)
             window_scales = [1 - i * scale_delta for i in range(num_window_sizes)]
 
-            print window_scales
         else:
-            window_scales = [1, .5, .25]
+            target_width = 32
+            height, width = image_size_hint
+            scales = [0.16, 0.33, 0.4, 0.5, 0.7, 0.8]
+            offset = 4
+            num_scales = 20
+            scales = [float(x+offset)/(offset+num_scales) for x in xrange(num_scales)]
+            window_scales = [target_width/(width * scale) for scale in scales]
+#            window_scales = [2**(-x+2) for x in xrange(6)]
         self.scales = window_scales
         # self.scales = [1, .5, .25]
 
@@ -55,13 +63,14 @@ class FaceDetector:
             else:
                 downsampled_image = im
             features, positions = utils.extract_features(downsampled_image, self.cell_size, self.window_shape)
+            if features is None:
+                continue
             positions /= scale
             all_features.append(features)
             all_positions.append(positions)
 
         all_features = np.vstack(all_features)
         all_positions = np.vstack(all_positions)
-
         for i, (classifier, threshold) in enumerate(izip(self.classifiers, self.thresholds)):
             utils.log_since("Testing cascade level %s" % i, start_time)
             output_probs = classifier.predict_proba(all_features)[:, 1]
@@ -89,7 +98,7 @@ class FaceDetector:
         if utils.USE_THREADING:
             pool.close()
 
-        return self.best_position
+        return all_positions #self.best_position
 
     def draw(self, im):
         im = im.convert("RGB")
@@ -144,26 +153,46 @@ def main():
     import pickle
     np.seterr(invalid='ignore')
 
-    cascade = pickle.load(open('cascade.pickle'))
-    # cascade.classifiers = [cascade.classifiers[2]]
-    cascade.thresholds = [0.3, 0.45, .6]
+    cascade = pickle.load(open('small_cascade.pickle'))
+    print len(cascade.classifiers)
+    cascade.classifiers = [cascade.classifiers[-1]]
+    print cascade.classifiers[0].oob_score_
+    print cascade.classifiers[0]
+    cascade.thresholds = [0.65, 0.45, .5]
 
     # im = Image.open('../getpubfig/dev/0be4da399ee374d95962a345c1f3c260.jpg').convert('L')
+    dir_name = '../getpubfig/eval/'
+#    dir_name = 'uncropped_images/newtest/'
+#     im = Image.open('test.png').convert('L')
+#     width, height = im.size
+#     target_width = float(150)
+#     im = ndimage.interpolation.zoom(im, target_width/width)
+#     face_detector = FaceDetector(cascade, im.shape)
+    
+#     im_np = np.array(im)
+#     #cProfile.runctx("svm_classifier.test(im_np)", None, locals(), sort='tottime')
+#     face_detector.test(im_np)
+#     face_detector.draw(Image.fromarray(im))
+#     return
+    for fname in os.listdir(dir_name):
+        im = Image.open('%s%s'% (dir_name, fname)).convert('L')
     # im = Image.open('uncropped_images/newtest/police.gif').convert('L')
-    im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
+    # im = Image.open('uncropped_images/newtest/bttf301.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/ew-friends.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')
-    width, height = im.size
+#        im = Image.open('test.png').convert('L')
+        width, height = im.size
+        target_width = float(70)
+        im = ndimage.interpolation.zoom(im, target_width/width)
+        face_detector = FaceDetector(cascade, im.shape)
 
-    face_detector = FaceDetector(cascade, (height, width))
-
-    im_np = np.array(im)
+        im_np = np.array(im)
     #cProfile.runctx("svm_classifier.test(im_np)", None, locals(), sort='tottime')
-    face_detector.test(im_np)
-    face_detector.draw(im)
-
+        face_detector.test(im_np)
+        face_detector.draw(Image.fromarray(im))
+    
 
 if __name__ == '__main__':
     main()

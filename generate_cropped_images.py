@@ -1,3 +1,4 @@
+import pickle
 from random import shuffle
 import Image
 import ImageDraw
@@ -124,6 +125,7 @@ def list_parse(file_handle):
 
 def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, target_height, target_width):
     # For each bounding box, crop image and save to corresponding location in output dir
+    face_scales_lst = []
     for file_name, boxes in bounding_boxes.iteritems():
         output_dir = os.path.join(dst_folder, os.path.dirname(file_name))
         if not os.path.exists(output_dir):
@@ -136,10 +138,11 @@ def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, t
         try:
             orig_image = Image.open(full_input_name)
         except IOError:
-            print 'Oh dear.'
+#            print 'Oh dear.'
             continue
         for i, (left, top, right, bottom) in enumerate(boxes):
             full_output_name = output_name_template % i
+            orig_width, orig_height = orig_image.size
             cropped = orig_image.crop((left, top, right, bottom)).copy()
             height = bottom - top
             width = right - left
@@ -178,7 +181,7 @@ def extract_faces(src_folder, dst_folder, bounding_boxes, target_aspect_ratio, t
                     new_top += new_botom - new_top - target_height
                 final = cropped.crop((0, new_top, target_width, new_botom))
             final.save(full_output_name)
-
+    pickle.dump(face_scales_lst, open('face_scales_lst.pickle', 'w+'))
 
 def extract_negative_patches(src_dir, dst_dir, bounding_boxes, target_aspect_ratio, target_height, target_width):
     current_patch = 0
@@ -310,16 +313,16 @@ def show_size_stats(bounding_boxes, target_aspect_ratio):
 
 def main():
 #    src_folder = "uncropped_images"
-    src_folder = "../getpubfig/dev"
-    faces_dst_folder = "cropped_pubfig"
-    negatives_dst_folder = "negative_examples_pubfig_scaled"
-    bounding_boxes = get_pubfig_bounding_box(open("../getpubfig/dev_urls.txt"))
+    src_folder = "../getpubfig/eval"
+    faces_dst_folder = "cropped_pubfig_eval"
+#    negatives_dst_folder = "negative_examples_pubfig_scaled"
+    bounding_boxes = get_pubfig_bounding_box(open("../getpubfig/eval_urls.txt"))
     #show_aspect_ratio_stats(bounding_boxes)
     #show_size_stats(bounding_boxes, 1.25)
     cropped_height = 40
     cropped_width = 32
-#    extract_faces(src_folder, faces_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
-    extract_negative_patches(src_folder, negatives_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
+    extract_faces(src_folder, faces_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
+#    extract_negative_patches(src_folder, negatives_dst_folder, bounding_boxes, 1.25, cropped_height, cropped_width)
 
 
 if __name__ == "__main__":

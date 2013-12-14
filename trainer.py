@@ -61,9 +61,8 @@ class Cascade(object):
         )
         self.training_labels = [TRUE] * len(positive_images) + [FALSE] * len(negative_images)
         self.training_labels = np.array(self.training_labels)
-        pickle.dump(self.training_features, open('cropped_training.pickle', 'w+'))
-        pickle.dump(self.training_labels, open('negative_training.pickle', 'w+'))
-        asdf
+#         pickle.dump(self.training_features, open('cropped_training.pickle', 'w+'))
+#         pickle.dump(self.training_labels, open('negative_training.pickle', 'w+'))
     def generate_cascade(self):
         if self.training_features is None:
             self.load_data()
@@ -77,7 +76,7 @@ class Cascade(object):
         self.training_features = None
         self.training_labels = None
         if name is None:
-            name = "cascade.pickle"
+            name = "small_cascade.pickle"
         f = open(name, 'w+')
         pickle.dump(self, f)
         f.close()
@@ -86,12 +85,13 @@ class Cascade(object):
 def main():
     np.seterr(invalid='ignore')
 
-    pos_dir = ['cropped_images/newtest/'] # , 'cropped_images/test-low/']
-    neg_dir = ['negative_examples/'] # ['negative_examples_pubfig/', 'negative_examples/']
+    pos_dir = ['cropped_pubfig/']#, 'cropped_pubfig_eval/'] #['cropped_images/newtest/'] # , 'cropped_images/test-low/']
+    neg_dir = ['negative_examples_pubfig/'] #, 'negative_examples/']
 
-    estimators = [10, 50, 200]
-    max_depths = [2, 3, 4]
-    thresholds = [.1, .1, .3]
+    estimators = [10]
+    max_depths = [4]
+    thresholds = [.3]
+    win_sizes = [4]
     # estimators = [200]
     # max_depths = [10]
     # thresholds = [.5]
@@ -105,7 +105,6 @@ def main():
     cascade.save_cascade()
 
     log("Out-of-bag error for each classifier: %s" % [c.oob_score_ for c in cascade.classifiers])
-
     log("DONE")
 
 
