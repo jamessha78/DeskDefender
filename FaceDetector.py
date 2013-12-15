@@ -153,12 +153,12 @@ def main():
     import pickle
     np.seterr(invalid='ignore')
 
-    cascade = pickle.load(open('small_cascade.pickle'))
+    cascade = pickle.load(open('james_big_cascade.pickle'))
     print len(cascade.classifiers)
     cascade.classifiers = [cascade.classifiers[-1]]
     print cascade.classifiers[0].oob_score_
     print cascade.classifiers[0]
-    cascade.thresholds = [0.65, 0.45, .5]
+    cascade.thresholds = [0.5, 0.5, .5]
 
     # im = Image.open('../getpubfig/dev/0be4da399ee374d95962a345c1f3c260.jpg').convert('L')
     dir_name = '../getpubfig/eval/'
@@ -182,16 +182,18 @@ def main():
     # im = Image.open('uncropped_images/newtest/harvard.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/addams-family.gif').convert('L')
     # im = Image.open('uncropped_images/newtest/audrey2.gif').convert('L')
-#        im = Image.open('test.png').convert('L')
-        width, height = im.size
-        target_width = float(70)
-        im = ndimage.interpolation.zoom(im, target_width/width)
-        face_detector = FaceDetector(cascade, im.shape)
+        im = Image.open('test.png').convert('L')
+#         width, height = im.size
+#         target_width = float(640)
+#         im = ndimage.interpolation.zoom(im, target_width/width)
+        face_detector = FaceDetector(cascade, im.size)
 
         im_np = np.array(im)
-    #cProfile.runctx("svm_classifier.test(im_np)", None, locals(), sort='tottime')
+#        cProfile.runctx("face_detector.test(im_np)", None, locals(), sort='totime')
         face_detector.test(im_np)
-        face_detector.draw(Image.fromarray(im))
+        face_detector.draw(Image.fromarray(im_np))
+        break
+#        face_detector.draw(im)
     
 
 if __name__ == '__main__':
