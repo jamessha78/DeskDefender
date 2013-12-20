@@ -4,17 +4,18 @@ _Militant Face Detection_
 
 <img src="https://github.com/jamessha78/DeskDefender/raw/master/images/cover_photo.jpg">
 
-Face-following usb rocket suite  
+__Summary__  
+DeskDefender is a face-following usb rocket suite, designed to fill the incredible need for stationary desk defense. DeskDefender will continuously track faces in the view of your attached kinect and allows the operator to remotely order the target to be fired upon.  
 
-To Use:  
+__To Use:__  
 1. Plug in your launcher and kinect  
 2. Run _sentinel.py_  
 
-Controls:  
+__Controls:__  
 * Space - Fire  
 * q - quit  
 
-Requirements:  
+__Requirements:__  
 * Dream Cheeky Thunder USB Missile Launcher  
 * pyusb  
 * OpenCV  
