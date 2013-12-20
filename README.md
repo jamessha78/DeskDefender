@@ -8,7 +8,7 @@ __Summary__
 DeskDefender is a face-following usb rocket suite, designed to fill the incredible need for stationary desk defense. DeskDefender will continuously track faces in the view of your attached kinect and allows the operator to remotely order the target to be fired upon.  
 
 __To Use:__  
-1. Plug in your launcher and kinect and place your launcher behind your kinect 
+1. Plug in your launcher and kinect and place your launcher behind your kinect  
 2. Run _sentinel.py_  
 
 __Controls:__  
