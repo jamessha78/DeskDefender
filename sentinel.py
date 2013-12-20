@@ -10,7 +10,8 @@ from PIL import Image
 
 from launcher import *
 
-threads = []
+# Path to OpenCV trained face detector
+haar_path = '/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml'
 
 def exit_callback(dt):
     pyglet.app.exit() 
@@ -39,28 +40,23 @@ def play_audio(audio_type):
     s.play()
     pyglet.clock.schedule_once(exit_callback, s.duration)
     pyglet.app.run()
-    s.delete()
     return
 
-#def play_audio(audio_type):
-#    t = threading.Thread(target=play_audio_subfunc, args = (audio_type,))
-#    t.start()
-   
 class Sentinel(object):
     def __init__(self):
-        #haar_path = '/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml'
-        haar_path = '/usr/local/Cellar/opencv/2.4.6.1/share/OpenCV/haarcascades/haarcascade_frontalface_default.xml'
         self.detector = cv2.CascadeClassifier(haar_path)
 
         print 'ZEROING LAUNCHER...'
-        #self.launcher = Launcher()
-        ## zero the launcher
-        #self.launcher.run_command('down', 1000)
-        #self.launcher.run_command('left', 6000)
-        #self.launcher.run_command('right', 3000)
-        #self.launcher.run_command('up', 500)
+        self.launcher = Launcher()
+        # zero the launcher
+        self.launcher.run_command('down', 1000)
+        self.launcher.run_command('left', 6000)
+        self.launcher.run_command('right', 3000)
+        self.launcher.run_command('up', 500)
  
         print 'DONE'
+
+        # Kinect intrinsics parameters, feel free to calibrate for better accuracy
         self.fx = 540
         self.fy = 540
         self.cx = 340
@@ -78,18 +74,6 @@ class Sentinel(object):
         tmp[:, :, 2] = image[:, :, 0]
         x, y, w, h = face
         cv2.rectangle(tmp, (x,y), (x+w,y+h), (255, 255, 255), 2)
-
-        cv2.imshow('test', tmp)
-        cv2.waitKey(10)
-
-    def display_faces(self, faces, image):
-        # Faces -> [(x, y, w, h)]
-        tmp = image.copy()
-        tmp[:, :, 0] = 0
-        tmp[:, :, 1] = 0
-        tmp[:, :, 2] = image[:, :, 0]
-        for (x, y, w, h) in faces:
-            cv2.rectangle(tmp, (x,y), (x+w,y+h), (0, 0, 255), 2)
 
         cv2.imshow('test', tmp)
         cv2.waitKey(10)
@@ -116,6 +100,7 @@ class Sentinel(object):
         depth_map_cpy[:, face_pix[0]+70:] = 2047
         window = abs(depth_map_cpy - prev_face_depth)
         good_indices = np.where(window < 5)
+        # this is terrible but w/e
         if not good_indices[0].any():
             return "Wrong"
         x = np.min(good_indices[1])
@@ -150,7 +135,7 @@ class Sentinel(object):
         y = self.fy*face_loc[1]/face_loc[2] + self.cy
         return (x, y)
 
-    def aim_follow(self, face_boxes, face_centers, face_depths, prev_face_loc, log_f):
+    def aim_follow(self, face_boxes, face_centers, face_depths, prev_face_loc):
         best_face = None
         best_dist = float('inf')
         best_face_idx = -1
@@ -168,7 +153,8 @@ class Sentinel(object):
             return
 
         face = face_boxes[best_face_idx]
-       
+        
+        # Find update angle values - approximation
         lr_theta_1 = np.arcsin(best_face[0]/best_face[2])
         lr_theta_2 = np.arcsin(prev_face_loc[0]/prev_face_loc[2])
         lr_value = int((lr_theta_1 - lr_theta_2)*180/np.pi*6000/360)
@@ -176,28 +162,23 @@ class Sentinel(object):
         ud_theta_2 = np.arcsin(prev_face_loc[1]/prev_face_loc[2])
         ud_value = int((ud_theta_1 - ud_theta_2)*180/np.pi*1000/30)
         
-        #if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
-        #    if abs(lr_value) > 10: # noise in the measurements
-        #        if lr_value < 0 and face[1]+face[3] < 640:
-        #            self.launcher.run_command('left', -lr_value)
-        #        elif lr_value > 0 and face[1] > 0:
-        #            self.launcher.run_command('right', lr_value)
-        #    if abs(ud_value) > 10: # noise in the measurements
-        #        if ud_value < 0 and face[0]+face[2] < 480:
-        #            self.launcher.run_command('up', -ud_value)
-        #        elif ud_value > 0 and face[0] > 0:
-        #            self.launcher.run_command('down', ud_value)
+        # Send updates to launcher
+        if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
+            if abs(lr_value) > 10: # noise in the measurements
+                if lr_value < 0 and face[1]+face[3] < 640:
+                    self.launcher.run_command('left', -lr_value)
+                elif lr_value > 0 and face[1] > 0:
+                    self.launcher.run_command('right', lr_value)
+            if abs(ud_value) > 10: # noise in the measurements
+                if ud_value < 0 and face[0]+face[2] < 480:
+                    self.launcher.run_command('up', -ud_value)
+                elif ud_value > 0 and face[0] > 0:
+                    self.launcher.run_command('down', ud_value)
         
         face_center = face_centers[best_face_idx]
-        log_f.write('{0}, {1}\n'.format(face_center[0], face_center[1]))
-        log_f.write('{0}, {1}, {2}\n'.format(best_face[0], best_face[1], best_face[2]))
-        log_f.write('{0}, {1}, {2}\n'.format(prev_face_loc[0], prev_face_loc[1], prev_face_loc[2]))
-        log_f.write('{0} {1}\n\n'.format(lr_value, ud_value))
-
         return best_face_idx
 
     def guard(self, win):
-    #def guard(self):
         win.nodelay(True) # make getkey() not wait
         stupid = 0
         print 'TRACKING...'
@@ -205,7 +186,6 @@ class Sentinel(object):
         prev_face_loc = (1e-10, 1e-10, 20) # start pointing at origin
         nondetection_duration = 120
         detection_duration = 0
-        f = open('log.txt', 'w+')
         while True:
             win.clear()
             win.addstr(0,0,str(stupid))
@@ -226,7 +206,8 @@ class Sentinel(object):
             depth_map = freenect.sync_get_depth()[0]*self.depth_constant
             
             faces = self.get_faces(image)
-           
+            
+            # This is complicated, needs cleaning
             if faces != ():
                 if nondetection_duration > 30 and detection_duration > 2:
                     play_audio('acquired person')
@@ -256,18 +237,16 @@ class Sentinel(object):
                 print 'Unable to acquire face depth, check thresholds'
                 continue
 
-            idx = self.aim_follow(faces, face_centers, face_depths, prev_face_loc, f)
+            idx = self.aim_follow(faces, face_centers, face_depths, prev_face_loc)
             self.display_face(faces[idx], image_col)
             
             face = faces[idx]
             if (face[0] > 30 and face[1] > 30 and face[0]+face[2] < 450 and face[1]+face[3] < 610):
                 prev_face_loc = self.get_face_loc(face_centers[idx], face_depths[idx])
 
-        f.close()
     def activate(self):
-        # Giant hacks to quit
+        # Giant hacks for keyboard interupt
         curses.wrapper(self.guard)
-        #self.guard()
 
 sentinel = Sentinel()
 sentinel.activate()
