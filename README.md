@@ -2,7 +2,7 @@ DeskDefender
 ============
 _Militant Face Detection_
 
-<img src="https://github.com/jamessha78/DeskDefender/tree/master/images/cover_photo.jpg">
+<img src="https://github.com/jamessha78/DeskDefender/blob/master/images/cover_photo.jpg">
 
 Face-following usb rocket suite  
 
